@@ -1,0 +1,3 @@
+[submodule "Assets/Scripts/Pebble"]
+	path = Assets/Scripts/Pebble
+	url = https://github.com/cvayer/Pebble-Unity.git
