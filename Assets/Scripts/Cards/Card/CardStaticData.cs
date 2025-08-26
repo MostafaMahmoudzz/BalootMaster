@@ -3,9 +3,16 @@ using UnityEngine;
 using Pebble;
 
 //----------------------------------------------
-//----------------------------------------------
 // CardStaticData
 //----------------------------------------------
+// Purpose:
+//   Central registry for card visual assets and prefabs. Provides
+//   sprite lookup for a given `Card32Value` and `Card32Family`, as
+//   well as the card prefab to instantiate.
+//
+// How it connects to other scripts:
+//   - Used by `BeloteCard.Spawn()` and `CardComponent.Init()` to pick
+//     the correct visuals.
 //----------------------------------------------
 public class CardStaticData : Singleton<CardStaticData>
 {

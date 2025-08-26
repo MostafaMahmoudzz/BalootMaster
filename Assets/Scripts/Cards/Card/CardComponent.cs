@@ -2,18 +2,27 @@
 using UnityEngine;
 using Pebble;
 //----------------------------------------------
+// CardComponent
 //----------------------------------------------
-// Card
-//----------------------------------------------
+// Purpose:
+//   Visual/interactive representation of a `BeloteCard` in the scene.
+//   Handles selection/drag based on mouse input and notifies gameplay
+//   via `BeloteCard.Selected` events.
+//
+// How it connects to other scripts:
+//   - Initialized by `BeloteCard.Spawn()` and managed by
+//     `GameStageRenderer` for layout.
+//   - Uses `CardStaticData` to fetch the right sprite.
+//   - Interacts with `Picker.Instance` for mouse world position.
 //----------------------------------------------
 public class CardComponent : MonoBehaviour
 {
     //----------------------------------------------
     // Variables
-    private BeloteCard m_card;
-    private bool m_isHovered = false;
-    private bool m_isSelected = false;
-    private Vector3 m_initialPosition = new Vector3();
+    private BeloteCard m_card;                 // Backing model
+    private bool m_isHovered = false;          // Mouse hover state
+    private bool m_isSelected = false;         // Drag selection state
+    private Vector3 m_initialPosition = new Vector3(); // Resting position
 
     //----------------------------------------------
     // Properties
@@ -41,34 +50,34 @@ public class CardComponent : MonoBehaviour
 
     public void Init(BeloteCard card)
     {
-        m_card = card;
-        m_isHovered = false;
+        m_card = card;                         // Bind model
+        m_isHovered = false;                   // Clear UI states
         m_isSelected = false;
 
         SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
         if(spriteRenderer != null)
         {
-            spriteRenderer.sprite = CardStaticData.Instance.GetSprite(m_card.Value, m_card.Family);
+            spriteRenderer.sprite = CardStaticData.Instance.GetSprite(m_card.Value, m_card.Family); // Set correct sprite
         }
 
-        gameObject.name = m_card.Value + " of " + m_card.Family;
+        gameObject.name = m_card.Value + " of " + m_card.Family; // Helpful for debugging in hierarchy
     }
 
     public void SetInitialPosition(Vector3 initialPosition)
     {
-        transform.localPosition = initialPosition;
-        m_initialPosition = initialPosition;
+        transform.localPosition = initialPosition; // Place at anchor
+        m_initialPosition = initialPosition;       // Remember for snapping back
     }
 
     bool CanBeSelected()
     {
         if(m_card != null)
         {
-            bool isHuman = m_card.Owner as HumanPlayer != null;
+            bool isHuman = m_card.Owner as HumanPlayer != null; // Only human can select
             if(isHuman)
             {
                 Player player = m_card.Owner as Player;
-                return player.CanPlay(m_card);
+                return player.CanPlay(m_card);   // Check legality
             }
         }
         return false;   
@@ -80,47 +89,47 @@ public class CardComponent : MonoBehaviour
     {
         if(CanBeSelected())
         {
-            GameObject underMouse = Picker.Instance.UnderMouse;
+            GameObject underMouse = Picker.Instance.UnderMouse; // Raycasted object under mouse
 
             if (underMouse != null && underMouse == gameObject)
             {
-                SetHovered(true);
+                SetHovered(true);            // Start hover
             }
             else
             {
-                SetHovered(false);
+                SetHovered(false);           // End hover
             }
 
             if(Hovered && !Selected)
             {
                 if (Input.GetMouseButtonDown(0))
                 {
-                    SetSelected(true);
+                    SetSelected(true);       // Begin drag
                 }
             }
 
             if (Selected && Input.GetMouseButtonUp(0))
             {
-                SetSelected(false);
+                SetSelected(false);          // End drag
             }
 
             if(m_isSelected)
             {
                 Vector3 newPos = new Vector3();
-                newPos = Picker.Instance.MouseWorldPos;
+                newPos = Picker.Instance.MouseWorldPos; // Follow mouse
                 newPos.z -= 0.1f;
                 transform.localPosition = newPos;
             }
             else
             {
-                transform.localPosition = m_initialPosition;
+                transform.localPosition = m_initialPosition; // Snap back to rest
             }
         }
         else
         {
             if(Selected)
             {
-                SetSelected(false);
+                SetSelected(false);          // Cancel selection if no longer valid
             }
         }
     }
@@ -159,13 +168,13 @@ public class CardComponent : MonoBehaviour
 
             BeloteCard.Selected evt = Pools.Claim<BeloteCard.Selected>();
             evt.Init(m_card, m_isSelected, isInHandArea);
-            GameEventDispatcher.SendEvent(evt);
+            GameEventDispatcher.SendEvent(evt); // Notify UI/gameplay listeners
         }
     }
 
     protected bool IsMouseInHandArea()
     {
-        Vector3 mouseToInitial = Input.mousePosition - gameObject.transform.position;
-        return mouseToInitial.magnitude >= 1.0f;
+        Vector3 mouseToInitial = Input.mousePosition - gameObject.transform.position; // Screen-space distance
+        return mouseToInitial.magnitude >= 1.0f; // Outside threshold => considered outside hand area
     }
 }

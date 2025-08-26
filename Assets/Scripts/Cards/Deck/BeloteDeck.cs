@@ -2,9 +2,16 @@
 using Pebble;
 
 //----------------------------------------------
+// BeloteDeck
 //----------------------------------------------
-// Deck
-//----------------------------------------------
+// Purpose:
+//   Concrete deck of `BeloteCard` with helpers to initialize a full
+//   Belote pack and to sort cards by family and strength, considering
+//   trump rules.
+//
+// How it connects to other scripts:
+//   - Used by `GameStage` as the main deck and by `Player` as the hand.
+//   - Relies on `ScoringData` to assign per-card normal/trump points.
 //----------------------------------------------
 
 public class BeloteDeck : BaseDeck<BeloteCard>
@@ -33,16 +40,16 @@ public class BeloteDeck : BaseDeck<BeloteCard>
                 BeloteCard card = new BeloteCard();
                 card.Family = family;
                 card.Value = value;
-                card.Point = scoring.GetPoint(value, false);
-                card.TrumpPoint = scoring.GetPoint(value, true);
-                AddCard(card);
+                card.Point = scoring.GetPoint(value, false); // Non-trump points
+                card.TrumpPoint = scoring.GetPoint(value, true); // Trump points
+                AddCard(card); // Add to deck
             }
         }
     }
 
     class CardComparer : IComparer<BeloteCard>
     {
-        public Card32Family? TrumpFamily { get; set; }
+        public Card32Family? TrumpFamily { get; set; } // Optional trump for sorting
 
         public int Compare(BeloteCard a, BeloteCard b)
         {
@@ -74,6 +81,6 @@ public class BeloteDeck : BaseDeck<BeloteCard>
     public void SortByFamilyAndValue(Card32Family? trumpFamily)
     {
         s_comparer.TrumpFamily = trumpFamily;
-        Cards.Sort(s_comparer);
+        Cards.Sort(s_comparer); // Sort in-place using comparer
     }
 }

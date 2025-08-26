@@ -2,6 +2,15 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
+//-------------------------------------------------------
+// Score
+//-------------------------------------------------------
+// Purpose:
+//   Tracks points per team across rounds and decides the leading team.
+//
+// How it connects to other scripts:
+//   - Used by `GameStage` to keep cumulative and round scores.
+//-------------------------------------------------------
 public class Score
 {
     private int[] m_scores;

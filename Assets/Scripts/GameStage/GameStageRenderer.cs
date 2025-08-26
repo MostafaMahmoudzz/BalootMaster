@@ -4,15 +4,24 @@ using UnityEngine;
 using Pebble;
 
 //-------------------------------------------------------
-//-------------------------------------------------------
 // GameStageRenderer
 //-------------------------------------------------------
+// Purpose:
+//   Handles visual representation of the game state: spawns/destroys
+//   card views, positions hands and the current fold, and draws simple
+//   on-screen HUD (score, trump, dealer, bidder, current player).
+//
+// How it connects to other scripts:
+//   - Subscribes to `BeloteCard.Played`, `GameStage.NewRoundEvent`,
+//     and `GameStage.NewTurnEvent` to refresh the display.
+//   - Uses `CardComponent` to render each `BeloteCard` model.
+//   - Reads from `GameStage` (players, folds, score, trump, etc.).
 //-------------------------------------------------------
 public class GameStageRenderer
 {
     //----------------------------------------------
     // Variables
-    private List<CardComponent> m_cards;
+    private List<CardComponent> m_cards; // All instantiated card views
 
     //----------------------------------------------
     // Properties
@@ -27,14 +36,14 @@ public class GameStageRenderer
     //-------------------------------------------------------
     public GameStageRenderer()
     {
-        m_cards = new List<CardComponent>();
+        m_cards = new List<CardComponent>(); // Prepare storage
     }
 
     public void Init()
     {
-        GameEventDispatcher.Subscribe<BeloteCard.Played>(this.OnCardPlayed, EventChannel.Post);
-        GameEventDispatcher.Subscribe<GameStage.NewRoundEvent>(this.OnNewRound);
-        GameEventDispatcher.Subscribe<GameStage.NewTurnEvent>(this.OnNewTurn);
+        GameEventDispatcher.Subscribe<BeloteCard.Played>(this.OnCardPlayed, EventChannel.Post); // React after plays
+        GameEventDispatcher.Subscribe<GameStage.NewRoundEvent>(this.OnNewRound);                 // Spawn/unspawn on round
+        GameEventDispatcher.Subscribe<GameStage.NewTurnEvent>(this.OnNewTurn);                   // Re-layout on turn
     }
 
     public  void Shutdown()
@@ -56,7 +65,7 @@ public class GameStageRenderer
         {
             if(Stage.Score != null)
             {
-                GUI.Label(new Rect(UnityEngine.Screen.width - 320, 200, 100, 30), "Score : " + Stage.Score.GetScore(PlayerTeam.Team1) + " / " + Stage.Score.GetScore(PlayerTeam.Team2));
+                GUI.Label(new Rect(UnityEngine.Screen.width - 320, 200, 100, 30), "Score : " + Stage.Score.GetScore(PlayerTeam.Team1) + " / " + Stage.Score.GetScore(PlayerTeam.Team2)); // Simple HUD
                 GUI.Label(new Rect(UnityEngine.Screen.width - 320, 230, 100, 30), "Trump : " + Stage.Trump);
                 GUI.Label(new Rect(UnityEngine.Screen.width - 320, 260, 100, 30), "Dealer : " + Stage.Dealer.Name);
                 GUI.Label(new Rect(UnityEngine.Screen.width - 320, 290, 100, 30), "Bidder : " + Stage.Bidder.Name);
@@ -110,24 +119,24 @@ public class GameStageRenderer
         // TODO : Spawn once, then invisible
         if(evt.Start)
         {
-            SpawnCards();
+            SpawnCards();      // Create views for every card in hands
         }
         else
         {
-            UnSpawnCards();
+            UnSpawnCards();    // Destroy all views
         }
             
-        Refresh();
+        Refresh();             // Recompute positions
     }
 
     private void OnNewTurn(GameStage.NewTurnEvent evt)
     {
-       Refresh();
+       Refresh();              // Re-layout hands and fold
     }
 
     protected void OnCardPlayed(BeloteCard.Played evt)
     {
-        Refresh();
+        Refresh();             // Move played card to fold area
     }
 
     protected void SpawnCards()
@@ -144,7 +153,7 @@ public class GameStageRenderer
             CardComponent newCard = card.Spawn();
             if (newCard)
             {
-                m_cards.Add(newCard);
+                m_cards.Add(newCard); // Track spawned card
             }
         }
     }
@@ -211,7 +220,7 @@ public class GameStageRenderer
             CardComponent cardComp = GetCardComponent(card);
             if (cardComp)
             {
-                cardComp.SetInitialPosition(spawnRef);
+                cardComp.SetInitialPosition(spawnRef); // Place card at computed anchor
 
                 Renderer renderer = cardComp.gameObject.GetComponent<Renderer>();
 
@@ -272,7 +281,7 @@ public class GameStageRenderer
                     spawnRef.y = 0.0f;  
                 }
                 
-                cardComp.SetInitialPosition(spawnRef);
+                cardComp.SetInitialPosition(spawnRef); // Place card in fold area
             }
         }
     }
@@ -287,7 +296,7 @@ public class GameStageRenderer
                 CardComponent cardComp = GetCardComponent(card);
                 if(cardComp != null)
                 {
-                    UnSpawnCard(cardComp);
+                    UnSpawnCard(cardComp); // Remove visual for archived fold
                 }
             }
         }

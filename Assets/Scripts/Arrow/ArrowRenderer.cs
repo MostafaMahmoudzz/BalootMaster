@@ -2,6 +2,15 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+// ArrowRenderer
+// Purpose:
+//   Renders a curved arrow between `start` and `end` using a chain of
+//   segment prefabs and an arrowhead. Segments animate along the arc
+//   and fade near the ends.
+//
+// How it connects to other scripts:
+//   - Standalone MonoBehaviour; can be driven by gameplay code to
+//     visualize directions or hints by calling `SetPositions`.
 public class ArrowRenderer : MonoBehaviour
 {
 	public float height = 0.5f;
@@ -27,17 +36,17 @@ public class ArrowRenderer : MonoBehaviour
 
 	public void SetPositions(Vector3 start, Vector3 end)
 	{
-		this.start = start;
-		this.end = end;
+		this.start = start; // World position of tail
+		this.end = end;     // World position of head
 	}
 	
 	void Update() {
-		UpdateSegments();
+		UpdateSegments(); // Recompute geometry every frame for animation
 	}
 	
 	void UpdateSegments()
 	{
-		Debug.DrawLine(start, end, Color.yellow);
+		Debug.DrawLine(start, end, Color.yellow); // Editor aid
 		
 		float distance = Vector3.Distance(start, end);
 		float radius = height / 2f + distance * distance / (8f * height);

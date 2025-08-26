@@ -2,19 +2,30 @@
 using Pebble;
 
 //----------------------------------------------
-//----------------------------------------------
 // Player
 //----------------------------------------------
+// Purpose:
+//   Base class for all players (human and AI). Manages the player's
+//   hand (`BeloteDeck`), turn flow, and permissible actions.
+//
+// How it connects to other scripts:
+//   - `GameStage` sets up players, dispatches turn events, and queries
+//     playable cards via `ComputePlayableCards`.
+//   - `BeloteDeck` stores cards in hand and exposes movement helpers.
+//   - `BeloteCard` instances are played into a `Fold`.
+//   - `GameEventDispatcher` notifies players about new turns.
+//   - Derived classes (`AIPlayer`, `HumanPlayer`) implement behavior by
+//     overriding `OnInit`, `OnUpdate`, `OnTurnStart`, `OnTurnStop`.
 //----------------------------------------------
 public class Player : IDeckOwner
 {
 
     //----------------------------------------------
     // Variables
-    protected GameStage m_stage;
-    private   BeloteDeck m_hand;
+    protected GameStage m_stage;            // Reference to current `GameStage` controlling the flow
+    private   BeloteDeck m_hand;            // The player's hand (owned deck)
 
-    private bool m_isAllowedToPlay = false;
+    private bool m_isAllowedToPlay = false; // True only during the player's turn
 
     //----------------------------------------------
     // Properties
@@ -23,11 +34,11 @@ public class Player : IDeckOwner
     {
         get
         {
-            return m_stage;
+            return m_stage;                 // Expose current stage to users/derived classes
         }
         set
         {
-            m_stage = value;
+            m_stage = value;                // Set by `GameStage` during player creation
         }
     }
 
@@ -37,7 +48,7 @@ public class Player : IDeckOwner
     {
         get
         {
-            return m_hand;
+            return m_hand;                  // Read-only accessor to the hand deck
         }
     }
 
@@ -53,15 +64,15 @@ public class Player : IDeckOwner
     //----------------------------------------------
     public Player()
     {
-        m_hand = new BeloteDeck(this);
+        m_hand = new BeloteDeck(this);      // Hand is owned by this player
     }
 
     //----------------------------------------------
     public void Init()
     {
-        GameEventDispatcher.Subscribe<GameStage.NewTurnEvent>(this.OnNewTurn);
+        GameEventDispatcher.Subscribe<GameStage.NewTurnEvent>(this.OnNewTurn); // Listen to turn changes
 
-        OnInit();
+        OnInit();                           // Allow derived classes to initialize
     }
 
     //----------------------------------------------
@@ -73,8 +84,8 @@ public class Player : IDeckOwner
     //--------------------------------------------------------------------
     public void Shutdown()
     {
-        OnShutdown();
-        GameEventDispatcher.UnSubscribe<GameStage.NewTurnEvent>(this.OnNewTurn);
+        OnShutdown();                       // Derived cleanup
+        GameEventDispatcher.UnSubscribe<GameStage.NewTurnEvent>(this.OnNewTurn); // Stop listening
     }
 
     //--------------------------------------------------------------------
@@ -87,7 +98,7 @@ public class Player : IDeckOwner
     //----------------------------------------------
     public void Update()
     {
-        OnUpdate();
+        OnUpdate();                         // Per-frame update hook
     }
 
     //----------------------------------------------
@@ -99,19 +110,19 @@ public class Player : IDeckOwner
     //----------------------------------------------
     protected void Play(BeloteCard card, Fold fold)
     {
-        if (CanPlay(card))
+        if (CanPlay(card))                  // Guard: only play legal cards
         {
-            DoPlay(card, fold);
+            DoPlay(card, fold);             // Execute the play
         }
     }
 
     //----------------------------------------------
     public bool CanPlay(BeloteCard card)
     {
-        if (m_isAllowedToPlay && Hand.Contains(card))
+        if (m_isAllowedToPlay && Hand.Contains(card)) // Only if it's our turn and we own the card
         {
             if(TurnPlayableCards != null && TurnPlayableCards.Contains(card))
-                return true;
+                return true;                // The card is part of the precomputed legal set
         }
         return false;
     }
@@ -119,8 +130,8 @@ public class Player : IDeckOwner
     //----------------------------------------------
     protected void DoPlay(BeloteCard card, Fold fold)
     {
-        m_hand.MoveCardTo(card, fold.Deck);
-        card.OnPlay();
+        m_hand.MoveCardTo(card, fold.Deck); // Move card from hand to the active fold
+        card.OnPlay();                      // Raise card played event
     }
 
     List<BeloteCard>  m_trumpCards = new List<BeloteCard> ();
@@ -128,7 +139,7 @@ public class Player : IDeckOwner
 
     protected BeloteDeck ComputePlayableCards(Fold fold, Card32Family trumpFamily)
     {
-        BeloteDeck playables = new BeloteDeck();
+        BeloteDeck playables = new BeloteDeck(); // Result deck of legal cards
 
         m_trumpCards.Clear();
         m_trumpBetterCards.Clear();
@@ -138,12 +149,12 @@ public class Player : IDeckOwner
             // No cards in the fold, all cards are valid
             if(fold.RequestedFamily == null)
             {
-                playables.CopyFrom(Hand);
+                playables.CopyFrom(Hand);   // First player: any card
             }
             else
             {
-                BeloteCard bestCard = fold.GetBest(trumpFamily);
-                Player bestPlayer = bestCard.Owner as Player;
+                BeloteCard bestCard = fold.GetBest(trumpFamily); // Current winning card in the fold
+                Player bestPlayer = bestCard.Owner as Player;     // Player who currently wins the fold
 
                 Card32Family requestedFamily = (Card32Family)fold.RequestedFamily;
 
@@ -152,18 +163,18 @@ public class Player : IDeckOwner
                 {
                     if(card.Family == requestedFamily)
                     {
-                        playables.AddCard(card);
+                        playables.AddCard(card); // Must follow suit if possible
                     }
 
                     if(card.Family == trumpFamily)
                     {
-                        m_trumpCards.Add(card);
+                        m_trumpCards.Add(card); // Track all trumps
 
                         if(bestCard.Family == trumpFamily)
                         {
                             if(BeloteCard.GetBestCard(card, bestCard, trumpFamily) == card)
                             {
-                                m_trumpBetterCards.Add(card);
+                                m_trumpBetterCards.Add(card); // Trumps that overtake best
                             }
                         }
                     }
@@ -174,7 +185,7 @@ public class Player : IDeckOwner
                 {
                     if(m_trumpBetterCards.Count > 0)
                     {
-                        playables.Clear();
+                        playables.Clear();             // If following trump, must overtrump when possible
                         playables.AddCards(m_trumpBetterCards);
                     }
                 }
@@ -186,7 +197,7 @@ public class Player : IDeckOwner
                     // Best card is partner we can play what we want
                     if(bestPlayer.Team == this.Team)
                     {
-                        playables.CopyFrom(Hand);
+                        playables.CopyFrom(Hand); // Partner leads: free play
                     }
                     else
                     {
@@ -194,21 +205,21 @@ public class Player : IDeckOwner
                         {
                             if(m_trumpBetterCards.Count > 0)
                             {
-                                playables.AddCards(m_trumpBetterCards);
+                                playables.AddCards(m_trumpBetterCards); // Must overtrump if possible
                             }
                             else // TODO : Add "pisser" rules
                             {
-                                playables.AddCards(m_trumpCards);
+                                playables.AddCards(m_trumpCards); // Otherwise any trump
                             }
                         }
                         else
                         {
-                            playables.AddCards(m_trumpCards);
+                            playables.AddCards(m_trumpCards); // No suit: may cut with trump
                         }
 
                         if(playables.Empty)
                         {
-                            playables.CopyFrom(Hand);
+                            playables.CopyFrom(Hand); // Still empty: truly free play
                         }    
                     }
                 }
@@ -222,16 +233,16 @@ public class Player : IDeckOwner
     {
        if(evt.Previous == this)
        {
-           m_isAllowedToPlay = false;
+           m_isAllowedToPlay = false;       // Our turn ended
            OnTurnStop();
-           TurnPlayableCards = null;
+           TurnPlayableCards = null;        // Clear cached legal moves
        }
 
        if(evt.Current == this)
        {
-           m_isAllowedToPlay = true;
+           m_isAllowedToPlay = true;        // Our turn starts
 
-           TurnPlayableCards = ComputePlayableCards(Stage.CurrentFold, Stage.Trump);
+           TurnPlayableCards = ComputePlayableCards(Stage.CurrentFold, Stage.Trump); // Precompute legal moves
            OnTurnStart();
        }
     }
@@ -241,6 +252,6 @@ public class Player : IDeckOwner
 
     public void PrintHand()
     {
-        Hand.Print(Name);
+        Hand.Print(Name);                   // Debug helper: print hand to logs/console
     }
 }
