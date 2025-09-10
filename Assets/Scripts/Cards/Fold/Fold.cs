@@ -47,17 +47,17 @@ public class Fold
         Points = 0;
     }
 
-    public void Finalize(Card32Family trumpFamily)
+    public void Finalize(Card32Family? trumpFamily)
     {
         BeloteCard bestCard = GetBest(trumpFamily); // Determine best card by rules
         if(bestCard != null)
         {
             Winner = bestCard.Owner as Player;      // Winner owns the best card
-            Points = GetPoints(trumpFamily);        // Sum points for this trick
+            Points = GetPoints(trumpFamily);         // Sum points for this trick
         }
     }
 
-    public BeloteCard GetBest(Card32Family trumpFamily)
+    public BeloteCard GetBest(Card32Family? trumpFamily)
     {
         Card32Family? requested = RequestedFamily;
         if(requested != null)
@@ -77,7 +77,7 @@ public class Fold
         return null;
     }
 
-    public int GetPoints(Card32Family trumpFamily)
+    public int GetPoints(Card32Family? trumpFamily)
     {
         int points = 0;
         foreach(BeloteCard card in Deck.Cards)

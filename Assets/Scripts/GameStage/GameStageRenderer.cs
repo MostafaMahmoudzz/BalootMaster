@@ -22,6 +22,7 @@ public class GameStageRenderer
     //----------------------------------------------
     // Variables
     private List<CardComponent> m_cards; // All instantiated card views
+    private CardComponent m_faceUpCardComponent; // Track the face-up card component specifically
 
     //----------------------------------------------
     // Properties
@@ -44,6 +45,8 @@ public class GameStageRenderer
         GameEventDispatcher.Subscribe<BeloteCard.Played>(this.OnCardPlayed, EventChannel.Post); // React after plays
         GameEventDispatcher.Subscribe<GameStage.NewRoundEvent>(this.OnNewRound);                 // Spawn/unspawn on round
         GameEventDispatcher.Subscribe<GameStage.NewTurnEvent>(this.OnNewTurn);                   // Re-layout on turn
+        GameEventDispatcher.Subscribe<BiddingStartEvent>(this.OnBiddingStart);                   // Handle bidding start
+        GameEventDispatcher.Subscribe<BiddingCompleteEvent>(this.OnBiddingComplete);             // Handle bidding complete
     }
 
     public  void Shutdown()
@@ -51,6 +54,14 @@ public class GameStageRenderer
         GameEventDispatcher.UnSubscribe<BeloteCard.Played>(this.OnCardPlayed, EventChannel.Post);
         GameEventDispatcher.UnSubscribe<GameStage.NewRoundEvent>(this.OnNewRound);
         GameEventDispatcher.UnSubscribe<GameStage.NewTurnEvent>(this.OnNewTurn);
+        GameEventDispatcher.UnSubscribe<BiddingStartEvent>(this.OnBiddingStart);
+        GameEventDispatcher.UnSubscribe<BiddingCompleteEvent>(this.OnBiddingComplete);
+        
+        // Clean up face-up card
+        UnSpawnFaceUpCard();
+        
+        // Final cleanup of any remaining face-up cards
+        CleanupAllFaceUpCards();
     }
 
     //---------------------------------------------
@@ -66,10 +77,16 @@ public class GameStageRenderer
             if(Stage.Score != null)
             {
                 GUI.Label(new Rect(UnityEngine.Screen.width - 320, 200, 100, 30), "Score : " + Stage.Score.GetScore(PlayerTeam.Team1) + " / " + Stage.Score.GetScore(PlayerTeam.Team2)); // Simple HUD
-                GUI.Label(new Rect(UnityEngine.Screen.width - 320, 230, 100, 30), "Trump : " + Stage.Trump);
-                GUI.Label(new Rect(UnityEngine.Screen.width - 320, 260, 100, 30), "Dealer : " + Stage.Dealer.Name);
-                GUI.Label(new Rect(UnityEngine.Screen.width - 320, 290, 100, 30), "Bidder : " + Stage.Bidder.Name);
-                GUI.Label(new Rect(UnityEngine.Screen.width - 320, 320, 100, 30), "Current : " + Stage.CurrentPlayer.Name);
+                GUI.Label(new Rect(UnityEngine.Screen.width - 320, 230, 100, 30), "Contract : " + (Stage.Trump != null ? Stage.Trump.ToString() : "Sun"));
+                GUI.Label(new Rect(UnityEngine.Screen.width - 320, 260, 100, 30), "Dealer : " + (Stage.Dealer != null ? Stage.Dealer.Name : "Not Set"));
+                GUI.Label(new Rect(UnityEngine.Screen.width - 320, 290, 100, 30), "Bidder : " + (Stage.Bidder != null ? Stage.Bidder.Name : "Not Set"));
+                GUI.Label(new Rect(UnityEngine.Screen.width - 320, 320, 100, 30), "Current : " + (Stage.CurrentPlayer != null ? Stage.CurrentPlayer.Name : "Not Set"));
+                
+                // Display face-up card information during bidding
+                if (Stage.FaceUpCard != null)
+                {
+                    GUI.Label(new Rect(UnityEngine.Screen.width - 320, 350, 200, 30), "Face-up Card: " + Stage.FaceUpCard.Value + " of " + Stage.FaceUpCard.Family);
+                }
 
             }
             
@@ -139,8 +156,37 @@ public class GameStageRenderer
         Refresh();             // Move played card to fold area
     }
 
+    //----------------------------------------------
+    protected void OnBiddingStart(BiddingStartEvent evt)
+    {
+        // Hide cards during bidding
+        UnSpawnCards();
+        
+        // Display face-up card for bidding
+        SpawnFaceUpCard();
+        
+        DebugCardCount();
+    }
+
+    //----------------------------------------------
+    protected void OnBiddingComplete(BiddingCompleteEvent evt)
+    {
+        // Hide face-up card after bidding
+        // Note: For Sun contracts, the face-up card has already been transferred to the winner's hand
+        // For Trump contracts, the face-up card should still be available
+        UnSpawnFaceUpCard();
+        
+        // Don't spawn cards here - OnNewRound will handle it
+        // This prevents double spawning
+        
+        DebugCardCount();
+    }
+
     protected void SpawnCards()
     {
+        // Clean up existing cards first to prevent duplication
+        UnSpawnCards();
+        
         foreach (Player player in Stage.Players)
         {
             SpawnCards(player);
@@ -150,10 +196,20 @@ public class GameStageRenderer
     {
         foreach (BeloteCard card in player.Hand)
         {
-            CardComponent newCard = card.Spawn();
-            if (newCard)
+            // Check if this card already has a visual component
+            CardComponent existingCard = GetCardComponent(card);
+            if (existingCard == null)
             {
-                m_cards.Add(newCard); // Track spawned card
+                CardComponent newCard = card.Spawn();
+                if (newCard)
+                {
+                    m_cards.Add(newCard); // Track spawned card
+                    Debug.Log($"Spawned card: {card.Value} of {card.Family} for {player.Name}");
+                }
+            }
+            else
+            {
+                Debug.Log($"Card already exists: {card.Value} of {card.Family} for {player.Name}");
             }
         }
     }
@@ -162,9 +218,83 @@ public class GameStageRenderer
     {
         foreach (CardComponent cardObj in m_cards)
         {
-            UnityEngine.Object.Destroy(cardObj.gameObject);
+            // Don't destroy the face-up card here - it's managed separately
+            if (cardObj != m_faceUpCardComponent)
+            {
+                UnityEngine.Object.Destroy(cardObj.gameObject);
+            }
         }
         m_cards.Clear();
+    }
+
+    //----------------------------------------------
+    protected void SpawnFaceUpCard()
+    {
+        // Always clean up any existing face-up cards first (safety measure)
+        CleanupAllFaceUpCards();
+        
+        // Don't spawn if one already exists
+        if (m_faceUpCardComponent != null)
+        {
+            Debug.Log("Face-up card already exists, skipping spawn");
+            return;
+        }
+        
+        if (Stage.FaceUpCard != null)
+        {
+            m_faceUpCardComponent = Stage.FaceUpCard.Spawn();
+            if (m_faceUpCardComponent != null)
+            {
+                // Position face-up card in center of screen
+                float halfHeight = Camera.main.orthographicSize;
+                float halfWidth = halfHeight * Camera.main.aspect;
+                
+                Vector3 faceUpPosition = new Vector3(0, 0, -1); // Center of screen
+                m_faceUpCardComponent.SetInitialPosition(faceUpPosition);
+                
+                // Make it slightly larger and elevated to stand out
+                m_faceUpCardComponent.transform.localScale = new Vector3(1.2f, 1.2f, 1.0f);
+                m_faceUpCardComponent.transform.position = new Vector3(faceUpPosition.x, faceUpPosition.y, -2);
+                
+                // Don't add face-up card to m_cards list - it's tracked separately
+                Debug.Log($"Spawned face-up card: {Stage.FaceUpCard.Value} of {Stage.FaceUpCard.Family}");
+            }
+        }
+    }
+
+    //----------------------------------------------
+    protected void UnSpawnFaceUpCard()
+    {
+        if (m_faceUpCardComponent != null)
+        {
+            Debug.Log($"UnSpawning face-up card: {m_faceUpCardComponent.Card?.Value} of {m_faceUpCardComponent.Card?.Family}");
+            
+            // Destroy the GameObject
+            UnityEngine.Object.Destroy(m_faceUpCardComponent.gameObject);
+            
+            // Clear reference
+            m_faceUpCardComponent = null;
+        }
+        
+        // Also clean up any remaining face-up cards in the scene (safety net)
+        CleanupAllFaceUpCards();
+    }
+    
+    //----------------------------------------------
+    protected void CleanupAllFaceUpCards()
+    {
+        // Find all CardComponents in the scene
+        CardComponent[] allCards = GameObject.FindObjectsOfType<CardComponent>();
+        
+        foreach (CardComponent cardComp in allCards)
+        {
+            if (cardComp != null && cardComp.Card != null && cardComp.Card.Owner == null)
+            {
+                // This is a face-up card (no owner)
+                Debug.Log($"Found orphaned face-up card: {cardComp.Card.Value} of {cardComp.Card.Family}, destroying it");
+                UnityEngine.Object.Destroy(cardComp.gameObject);
+            }
+        }
     }
 
     protected void UnSpawnCard(CardComponent cardObj)
@@ -312,6 +442,14 @@ public class GameStageRenderer
             }
         }
         return null;
+    }
+
+    //----------------------------------------------
+    // Debug method to count cards in scene
+    public void DebugCardCount()
+    {
+        int totalCards = GameObject.FindObjectsOfType<CardComponent>().Length;
+        Debug.Log($"Total CardComponents in scene: {totalCards}, Tracked cards: {m_cards.Count}, Face-up card: {(m_faceUpCardComponent != null ? "Yes" : "No")}");
     }
 
 }

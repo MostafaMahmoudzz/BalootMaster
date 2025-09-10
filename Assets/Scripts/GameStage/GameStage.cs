@@ -40,6 +40,8 @@ public class GameStage : Stage, IDeckOwner
 
     private GameStageRenderer                  m_renderer;       // UI layer for this stage
 
+    private BelootBiddingSystem               m_biddingSystem;  // Bidding system for trump selection
+
     private EndState m_endState;                                // Success/Fail/None state
 
     private static int s_invalidRoundCount = -1;                // Sentinel for uninitialized round
@@ -141,7 +143,14 @@ public class GameStage : Stage, IDeckOwner
     }
 
     
-    public Card32Family Trump {get; set; }                         // Trump family for the current round
+    public Card32Family? Trump {get; set; }                        // Trump family for the current round (null for Sun contract)
+
+    public BeloteCard FaceUpCard { get; set; }                     // Face-up card revealed for bidding
+
+    public BelootBiddingSystem BiddingSystem
+    {
+        get { return m_biddingSystem; }
+    }
 
     //----------------------------------------------
     public GameStage()
@@ -153,6 +162,7 @@ public class GameStage : Stage, IDeckOwner
         m_currentFold = new Fold();                                // Start with an empty fold
         m_pastFolds = new List<Fold>[Enum.GetValues(typeof(PlayerTeam)).Length];
         m_renderer = new GameStageRenderer();                      // UI renderer instance
+        m_biddingSystem = new BelootBiddingSystem();               // Bidding system instance
 
         for(int i = 0; i < m_pastFolds.Length; ++i)
         {
@@ -171,6 +181,7 @@ public class GameStage : Stage, IDeckOwner
         m_deck.Init(Definition.Scoring);                           // Create a Belote deck using scoring data
 
         GameEventDispatcher.Subscribe<BeloteCard.Played>(this.OnCardPlayed); // Listen to plays
+        GameEventDispatcher.Subscribe<BiddingCompleteEvent>(this.OnBiddingComplete); // Listen to bidding completion
 
         AddPlayers();                                              // Create players for the match
     }
@@ -181,6 +192,7 @@ public class GameStage : Stage, IDeckOwner
         m_renderer.Shutdown();                                     // Cleanup UI
 
         GameEventDispatcher.UnSubscribe<BeloteCard.Played>(this.OnCardPlayed); // Stop listening
+        GameEventDispatcher.UnSubscribe<BiddingCompleteEvent>(this.OnBiddingComplete); // Stop listening
 
         foreach (Player player in m_players)
         {
@@ -263,19 +275,19 @@ public class GameStage : Stage, IDeckOwner
     protected void AddPlayers()
     {
         AddPlayer<HumanPlayer>(PlayerTeam.Team1, PlayerPosition.South, "South"); // Human at South
-        AddPlayer<AIPlayer>(PlayerTeam.Team2, PlayerPosition.West, "West");     // AI at West
-        AddPlayer<AIPlayer>(PlayerTeam.Team1, PlayerPosition.North, "North");   // AI at North
-        AddPlayer<AIPlayer>(PlayerTeam.Team2, PlayerPosition.East, "East");     // AI at East
+        AddPlayer<HumanPlayer>(PlayerTeam.Team2, PlayerPosition.West, "West");     // AI at West
+        AddPlayer<HumanPlayer>(PlayerTeam.Team1, PlayerPosition.North, "North");   // AI at North
+        AddPlayer<HumanPlayer>(PlayerTeam.Team2, PlayerPosition.East, "East");     // AI at East
     }
 
-    protected Player GetLeftPlayer(Player player)
+    protected Player GetRightPlayer(Player player)
     {
         if(m_players.Count > 0)
         {
             if(player != null)
             {
                  int index = m_players.IndexOf(player);            // Find current index
-                 index = (index + 1)% m_players.Count;             // Move one seat to the left
+                 index = (index - 1 + m_players.Count) % m_players.Count; // Move one seat to the right (anti-clockwise)
                  return m_players[index];
             }
             return m_players[0];                                   // Default to first player
@@ -286,26 +298,57 @@ public class GameStage : Stage, IDeckOwner
     protected void DealCards()
     {
         // TODO : Cut
-        // New dealer is the left player of the current player
-        Dealer = GetLeftPlayer(Dealer);                            // Rotate dealer each round
-        RoundFirstPlayer = GetLeftPlayer(Dealer);                   // First to play after dealer
+        // New dealer is the right player of the current player (anti-clockwise)
+        Dealer = GetRightPlayer(Dealer);                            // Rotate dealer each round
+        RoundFirstPlayer = GetRightPlayer(Dealer);                   // First to play after dealer
    
-        for(int  iDeal = 0; iDeal < Definition.DealingRules.Dealings.Count; ++iDeal)
-        {
-            int dealing = Definition.DealingRules.Dealings[iDeal];
-
-            Player player = RoundFirstPlayer;
-            do
-            {
-                m_deck.MoveCardsTo(dealing, player.Hand);          // Deal a block to current player
-                player = GetLeftPlayer(player);                    // Next player clockwise
-            }
-            while(player != RoundFirstPlayer);
-        }
+        // Deal 3 cards to each player
+        DealCardsToPlayers(3);
+        
+        // Deal 2 more cards to each player (total 5)
+        DealCardsToPlayers(2);
 
         foreach (Player player in m_players)
         {
             player.Hand.SortByFamilyAndValue(null);                // Sort with no trump known yet
+        }
+    }
+
+    //-------------------------------------------------------
+    private void DealCardsToPlayers(int cardsPerPlayer)
+    {
+        Player player = RoundFirstPlayer;
+        do
+        {
+            m_deck.MoveCardsTo(cardsPerPlayer, player.Hand);       // Deal cards to current player
+            player = GetRightPlayer(player);                       // Next player anti-clockwise
+        }
+        while(player != RoundFirstPlayer);
+    }
+
+    //-------------------------------------------------------
+    private void DealCardsForSunContract(Player sunDeclarer, BeloteCard faceUpCard)
+    {
+        // Sun declarer gets the face-up card + 2 additional cards (total 8)
+        if (faceUpCard != null)
+        {
+            sunDeclarer.Hand.AddCard(faceUpCard);                  // Give face-up card to Sun declarer
+            faceUpCard.Owner = sunDeclarer;                        // Set ownership
+            Debug.Log($"{sunDeclarer.Name} receives face-up card: {faceUpCard.Value} of {faceUpCard.Family}");
+        }
+        
+        // Deal 2 cards to Sun declarer
+        m_deck.MoveCardsTo(2, sunDeclarer.Hand);
+        Debug.Log($"{sunDeclarer.Name} receives 2 additional cards (total: {sunDeclarer.Hand.Size} cards)");
+        
+        // Deal 3 cards to all other players
+        foreach (Player player in m_players)
+        {
+            if (player != sunDeclarer)
+            {
+                m_deck.MoveCardsTo(3, player.Hand);
+                Debug.Log($"{player.Name} receives 3 additional cards (total: {player.Hand.Size} cards)");
+            }
         }
     }
 
@@ -316,20 +359,106 @@ public class GameStage : Stage, IDeckOwner
 
         DealCards();                                               // Distribute cards
 
-        // TODO : Bidding round, Random Trump for now
-        // TODO : Bidder
-        Bidder = RoundFirstPlayer;                                 // Temporary bidder placeholder
-        Trump = (Card32Family) UnityEngine.Random.Range(0, Enum.GetValues(typeof(Card32Family)).Length); // Random trump
+        // Start bidding round
+        StartBiddingRound();
+    }
+
+    //----------------------------------------------
+    void StartBiddingRound()
+    {
+        // Reset all players' bidding state
         foreach (Player player in m_players)
         {
-            player.Hand.SortByFamilyAndValue(Trump);               // Resort with known trump
+            player.ResetBidding();
         }
 
-        NewRoundEvent evt = Pools.Claim<NewRoundEvent>();          // Announce round start
-        evt.Start = true;
-        GameEventDispatcher.SendEvent(evt);
+        // Reveal face-up card (proposed trump suit)
+        BeloteDeck tempDeck = new BeloteDeck();
+        m_deck.MoveCardsTo(1, tempDeck); // Move one card to temp deck
+        BeloteCard faceUpCard = tempDeck.Cards[0]; // Get the card
+        faceUpCard.Owner = null; // Face-up card belongs to no one
+        
+        // Store face-up card for visual display
+        FaceUpCard = faceUpCard;
 
-        StartTurn(RoundFirstPlayer);                               // First turn goes to first player
+        // Start bidding with the first player
+        m_biddingSystem.StartBidding(m_players, RoundFirstPlayer, faceUpCard);
+    }
+
+    //----------------------------------------------
+    void OnBiddingComplete(BiddingCompleteEvent evt)
+    {
+        if (evt.WinningBidder != null && evt.WinningBid != null)
+        {
+            // Set the winning bidder and contract
+            Bidder = evt.WinningBidder;
+            
+            if (evt.SunDeclared)
+            {
+                // Sun contract - no trump
+                Trump = null;
+                Debug.Log($"{evt.WinningBidder.Name} declared Sun contract - gets face-up card + 2 additional cards");
+            }
+            else if (evt.WinningBid.IsTrump)
+            {
+                // Trump contract
+                Trump = evt.WinningBid.Suit;
+            }
+
+            // Clear face-up card reference before dealing (so renderer can clean up the visual)
+            BeloteCard faceUpCardToClean = FaceUpCard;
+            FaceUpCard = null;
+            
+            // Deal remaining cards based on contract type
+            if (evt.SunDeclared)
+            {
+                // Sun contract: Winner gets face-up card + 2 cards, others get 3 cards
+                DealCardsForSunContract(evt.WinningBidder, faceUpCardToClean);
+            }
+            else
+            {
+                // Trump contract: All players get 3 additional cards
+                DealCardsToPlayers(3);
+            }
+
+            // Resort all hands with known trump
+            foreach (Player player in m_players)
+            {
+                player.Hand.SortByFamilyAndValue(Trump);
+            }
+
+            // Announce round start
+            NewRoundEvent roundEvt = Pools.Claim<NewRoundEvent>();
+            roundEvt.Start = true;
+            GameEventDispatcher.SendEvent(roundEvt);
+
+            // Start the first turn
+            StartTurn(RoundFirstPlayer);
+        }
+        else
+        {
+            // Case C: All passed, no contract - start new round with new dealer
+            Debug.Log("No contract made - starting new round with new dealer");
+            StartRound();
+        }
+    }
+
+    //----------------------------------------------
+    public void SubmitBid(Player player, Bid bid)
+    {
+        // Submit bid through bidding system
+        if (m_biddingSystem.SubmitBid(player, bid))
+        {
+            // Bid was accepted - send turn event for next player
+            if (!m_biddingSystem.IsComplete)
+            {
+                BiddingTurnEvent evt = Pools.Claim<BiddingTurnEvent>();
+                evt.CurrentBidder = m_biddingSystem.CurrentBidder;
+                evt.HighestBid = m_biddingSystem.HighestBid;
+                evt.Round = m_biddingSystem.CurrentRound;
+                GameEventDispatcher.SendEvent(evt);
+            }
+        }
     }
 
     Score m_roundScore = new Score();
@@ -419,7 +548,7 @@ public class GameStage : Stage, IDeckOwner
         }
         else
         {
-            StartTurn(GetLeftPlayer(CurrentPlayer));                // Next player clockwise
+            StartTurn(GetRightPlayer(CurrentPlayer));               // Next player anti-clockwise
         }
     }
 

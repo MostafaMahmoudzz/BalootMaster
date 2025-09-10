@@ -61,10 +61,16 @@ public class Player : IDeckOwner
 
     public PlayerPosition Position { get; set; }
 
+    // Bidding support
+    public Bid CurrentBid { get; set; }     // Player's current bid
+    public bool HasBid { get; set; }        // Has player submitted a bid?
+
     //----------------------------------------------
     public Player()
     {
         m_hand = new BeloteDeck(this);      // Hand is owned by this player
+        CurrentBid = null;
+        HasBid = false;
     }
 
     //----------------------------------------------
@@ -137,7 +143,7 @@ public class Player : IDeckOwner
     List<BeloteCard>  m_trumpCards = new List<BeloteCard> ();
     List<BeloteCard>  m_trumpBetterCards = new List<BeloteCard> ();
 
-    protected BeloteDeck ComputePlayableCards(Fold fold, Card32Family trumpFamily)
+    protected BeloteDeck ComputePlayableCards(Fold fold, Card32Family? trumpFamily)
     {
         BeloteDeck playables = new BeloteDeck(); // Result deck of legal cards
 
@@ -249,6 +255,26 @@ public class Player : IDeckOwner
 
     protected virtual void OnTurnStart() {}
     protected virtual void OnTurnStop() {}
+
+    //----------------------------------------------
+    // Bidding Methods
+    public virtual void SubmitBid(Bid bid)
+    {
+        CurrentBid = bid;
+        HasBid = true;
+
+        // Send bid submitted event
+        BidSubmittedEvent evt = Pools.Claim<BidSubmittedEvent>();
+        evt.Player = this;
+        evt.Bid = bid;
+        GameEventDispatcher.SendEvent(evt);
+    }
+
+    public virtual void ResetBidding()
+    {
+        CurrentBid = null;
+        HasBid = false;
+    }
 
     public void PrintHand()
     {

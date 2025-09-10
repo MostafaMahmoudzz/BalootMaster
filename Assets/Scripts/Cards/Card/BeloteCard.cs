@@ -65,7 +65,7 @@ public partial class BeloteCard  : Card32
         return "(" + Value + " " + Family + ")";              // Human-readable identifier
     }
 
-     public static BeloteCard GetBestCard(BeloteCard a, BeloteCard b, Card32Family trumpFamily)
+     public static BeloteCard GetBestCard(BeloteCard a, BeloteCard b, Card32Family? trumpFamily)
     {
         if(a.Family == b.Family)                                 // Same suit: compare points, then value
         {
@@ -85,7 +85,7 @@ public partial class BeloteCard  : Card32
         }
         else
         {
-            if(a.Family == trumpFamily)                          // Different suit: trump beats non-trump
+            if(trumpFamily != null && a.Family == trumpFamily)   // Different suit: trump beats non-trump (only if trump exists)
             {
                 return a;
             }     
