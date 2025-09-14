@@ -141,7 +141,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &77308521
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -530,7 +530,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &495566870
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -849,7 +849,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &995773141
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1103,7 +1103,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1356571235
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1254,6 +1254,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   biddingPanel: {fileID: 1459724283}
   passButton: {fileID: 1774809495}
+  sunButton: {fileID: 0}
   clubsButton: {fileID: 995773141}
   diamondsButton: {fileID: 495566870}
   heartsButton: {fileID: 1799882967}
@@ -1261,6 +1262,8 @@ MonoBehaviour:
   currentBidderText: {fileID: 1597898804}
   highestBidText: {fileID: 1356571235}
   biddingInstructions: {fileID: 1714456709}
+  faceUpCardText: {fileID: 0}
+  roundText: {fileID: 0}
 --- !u!114 &1459724285
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1436,7 +1439,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1597898804
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1713,7 +1716,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1714456709
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1982,7 +1985,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1774809495
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2103,7 +2106,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1799882967
 MonoBehaviour:
   m_ObjectHideFlags: 0

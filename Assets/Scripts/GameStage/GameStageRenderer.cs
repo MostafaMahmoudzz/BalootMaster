@@ -47,6 +47,7 @@ public class GameStageRenderer
         GameEventDispatcher.Subscribe<GameStage.NewTurnEvent>(this.OnNewTurn);                   // Re-layout on turn
         GameEventDispatcher.Subscribe<BiddingStartEvent>(this.OnBiddingStart);                   // Handle bidding start
         GameEventDispatcher.Subscribe<BiddingCompleteEvent>(this.OnBiddingComplete);             // Handle bidding complete
+        GameEventDispatcher.Subscribe<GameStage.CardsCollectedEvent>(this.OnCardsCollected);     // Handle card collection
     }
 
     public  void Shutdown()
@@ -56,6 +57,7 @@ public class GameStageRenderer
         GameEventDispatcher.UnSubscribe<GameStage.NewTurnEvent>(this.OnNewTurn);
         GameEventDispatcher.UnSubscribe<BiddingStartEvent>(this.OnBiddingStart);
         GameEventDispatcher.UnSubscribe<BiddingCompleteEvent>(this.OnBiddingComplete);
+        GameEventDispatcher.UnSubscribe<GameStage.CardsCollectedEvent>(this.OnCardsCollected);
         
         // Clean up face-up card
         UnSpawnFaceUpCard();
@@ -80,12 +82,58 @@ public class GameStageRenderer
                 GUI.Label(new Rect(UnityEngine.Screen.width - 320, 230, 100, 30), "Contract : " + (Stage.Trump != null ? Stage.Trump.ToString() : "Sun"));
                 GUI.Label(new Rect(UnityEngine.Screen.width - 320, 260, 100, 30), "Dealer : " + (Stage.Dealer != null ? Stage.Dealer.Name : "Not Set"));
                 GUI.Label(new Rect(UnityEngine.Screen.width - 320, 290, 100, 30), "Bidder : " + (Stage.Bidder != null ? Stage.Bidder.Name : "Not Set"));
-                GUI.Label(new Rect(UnityEngine.Screen.width - 320, 320, 100, 30), "Current : " + (Stage.CurrentPlayer != null ? Stage.CurrentPlayer.Name : "Not Set"));
+                
+                // Show current bidder during bidding, current player during card play
+                string currentPlayerName = "Not Set";
+                string statusMessage = "";
+                
+                if (Stage.BiddingSystem != null && !Stage.BiddingSystem.IsComplete)
+                {
+                    // During bidding, show current bidder
+                    currentPlayerName = Stage.BiddingSystem.CurrentBidder != null ? Stage.BiddingSystem.CurrentBidder.Name : "Not Set";
+                    
+                    // Check if we're waiting for trump suit selection
+                    if (Stage.BiddingSystem.WaitingForTrumpSuitSelection)
+                    {
+                        statusMessage = "Waiting for Trump Suit Selection";
+                        currentPlayerName = "Select Trump Suit";
+                    }
+                    else
+                    {
+                        statusMessage = "Bidding in Progress";
+                    }
+                    
+                    // Debug: Log the current bidder being displayed
+                    if (Time.frameCount % 60 == 0) // Log every 60 frames to avoid spam
+                    {
+                        Debug.Log($"[GameStageRenderer] Displaying current bidder: {currentPlayerName} (Bidding active: {!Stage.BiddingSystem.IsComplete}, Waiting for suit: {Stage.BiddingSystem.WaitingForTrumpSuitSelection})");
+                    }
+                }
+                else if (Stage.CurrentPlayer != null)
+                {
+                    // During card play, show current player
+                    currentPlayerName = Stage.CurrentPlayer.Name;
+                    statusMessage = "Card Play in Progress";
+                }
+                GUI.Label(new Rect(UnityEngine.Screen.width - 320, 320, 100, 30), "Current : " + currentPlayerName);
+                
+                // Display status message
+                if (!string.IsNullOrEmpty(statusMessage))
+                {
+                    GUI.Label(new Rect(UnityEngine.Screen.width - 320, 350, 200, 30), "Status: " + statusMessage);
+                }
                 
                 // Display face-up card information during bidding
                 if (Stage.FaceUpCard != null)
                 {
-                    GUI.Label(new Rect(UnityEngine.Screen.width - 320, 350, 200, 30), "Face-up Card: " + Stage.FaceUpCard.Value + " of " + Stage.FaceUpCard.Family);
+                    GUI.Label(new Rect(UnityEngine.Screen.width - 320, 380, 200, 30), "Face-up Card: " + Stage.FaceUpCard.Value + " of " + Stage.FaceUpCard.Family);
+                    
+                    // Show trump suit selection instructions if waiting for suit selection
+                    if (Stage.BiddingSystem != null && Stage.BiddingSystem.WaitingForTrumpSuitSelection)
+                    {
+                        GUI.Label(new Rect(UnityEngine.Screen.width - 320, 410, 250, 30), "Cannot choose: " + Stage.FaceUpCard.Family + " (face-up suit)");
+                        GUI.Label(new Rect(UnityEngine.Screen.width - 320, 440, 250, 30), "Choose any other suit as trump");
+                    }
                 }
 
             }
@@ -133,17 +181,16 @@ public class GameStageRenderer
 
     private void OnNewRound(GameStage.NewRoundEvent evt)
     {
-        // TODO : Spawn once, then invisible
         if(evt.Start)
         {
-            SpawnCards();      // Create views for every card in hands
+            // Cards are already spawned from OnBiddingStart, so we don't need to spawn them again
+            // Just refresh positions in case cards were added/removed during bidding
+            Refresh();
         }
         else
         {
             UnSpawnCards();    // Destroy all views
         }
-            
-        Refresh();             // Recompute positions
     }
 
     private void OnNewTurn(GameStage.NewTurnEvent evt)
@@ -159,8 +206,17 @@ public class GameStageRenderer
     //----------------------------------------------
     protected void OnBiddingStart(BiddingStartEvent evt)
     {
-        // Hide cards during bidding
-        UnSpawnCards();
+        // Show player cards during bidding so they can make informed decisions
+        // Only spawn if cards aren't already spawned
+        if (m_cards.Count == 0)
+        {
+            SpawnCards();
+        }
+        else
+        {
+            // Cards are already spawned, just refresh positions
+            Refresh();
+        }
         
         // Display face-up card for bidding
         SpawnFaceUpCard();
@@ -176,8 +232,26 @@ public class GameStageRenderer
         // For Trump contracts, the face-up card should still be available
         UnSpawnFaceUpCard();
         
-        // Don't spawn cards here - OnNewRound will handle it
-        // This prevents double spawning
+        // Cards are already spawned from OnBiddingStart, so we don't need to spawn them again
+        // Just refresh positions in case cards were added/removed during bidding
+        Refresh();
+        
+        DebugCardCount();
+    }
+
+    //----------------------------------------------
+    protected void OnCardsCollected(GameStage.CardsCollectedEvent evt)
+    {
+        Debug.Log("[GameStageRenderer] Cards collected event received - cleaning up all visual components");
+        
+        // Clean up all card visual components since cards have been collected back to deck
+        UnSpawnCards();
+        
+        // Clean up face-up card as well
+        UnSpawnFaceUpCard();
+        
+        // Final cleanup of any remaining orphaned cards
+        CleanupAllFaceUpCards();
         
         DebugCardCount();
     }
@@ -191,6 +265,9 @@ public class GameStageRenderer
         {
             SpawnCards(player);
         }
+        
+        // Position all cards in their designated positions
+        Refresh();
     }
     protected void SpawnCards(Player player)
     {
@@ -204,7 +281,6 @@ public class GameStageRenderer
                 if (newCard)
                 {
                     m_cards.Add(newCard); // Track spawned card
-                    Debug.Log($"Spawned card: {card.Value} of {card.Family} for {player.Name}");
                 }
             }
             else
@@ -212,6 +288,18 @@ public class GameStageRenderer
                 Debug.Log($"Card already exists: {card.Value} of {card.Family} for {player.Name}");
             }
         }
+    }
+
+    // Spawn a single card and return its CardComponent
+    protected CardComponent SpawnCard(BeloteCard card, Player player)
+    {
+        CardComponent newCard = card.Spawn();
+        if (newCard)
+        {
+            m_cards.Add(newCard); // Track spawned card
+            Debug.Log($"Spawned new card: {card.Value} of {card.Family} for {player.Name}");
+        }
+        return newCard;
     }
 
     protected void UnSpawnCards()
@@ -323,6 +411,9 @@ public class GameStageRenderer
         float halfWidth = halfHeight*Camera.main.aspect;
 
         float spacing = -0.4f;
+        
+        // Reset rotation for each player
+        rotation = Vector3.zero;
 
         if(player.Position == PlayerPosition.South)
         {
@@ -348,6 +439,13 @@ public class GameStageRenderer
         foreach (BeloteCard card in player.Hand)
         {
             CardComponent cardComp = GetCardComponent(card);
+            
+            // If card doesn't have a visual component yet, spawn one
+            if (cardComp == null)
+            {
+                cardComp = SpawnCard(card, player);
+            }
+            
             if (cardComp)
             {
                 cardComp.SetInitialPosition(spawnRef); // Place card at computed anchor
@@ -374,6 +472,7 @@ public class GameStageRenderer
                     rotation.z = -90.0f;
                     cardComp.gameObject.transform.eulerAngles = rotation;
                 }
+                
             }
         }
     }

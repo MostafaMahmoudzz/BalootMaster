@@ -94,3 +94,16 @@ public class BiddingRound2StartEvent : PooledEvent
         FaceUpCard = null;
     }
 }
+
+//-------------------------------------------------------
+// BiddingNoBidsEvent
+//-------------------------------------------------------
+public class BiddingNoBidsEvent : PooledEvent
+{
+    public bool BothRoundsNoBids { get; set; }
+
+    public override void Reset()
+    {
+        BothRoundsNoBids = false;
+    }
+}

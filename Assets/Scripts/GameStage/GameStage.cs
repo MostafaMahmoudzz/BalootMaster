@@ -44,9 +44,9 @@ public class GameStage : Stage, IDeckOwner
 
     private EndState m_endState;                                // Success/Fail/None state
 
-    private static int s_invalidRoundCount = -1;                // Sentinel for uninitialized round
+    private static int s_invalidRoundCount = 0;                 // Sentinel for uninitialized round (now starts from 0)
 
-    private int m_currentRound = s_invalidRoundCount;           // Current round index
+    private int m_currentRound = s_invalidRoundCount;           // Current round index (starts from 0, first round will be 1)
 
 
     private static float s_afterPlayDuration = 1.0f;            // Delay after each play to show UI
@@ -182,6 +182,7 @@ public class GameStage : Stage, IDeckOwner
 
         GameEventDispatcher.Subscribe<BeloteCard.Played>(this.OnCardPlayed); // Listen to plays
         GameEventDispatcher.Subscribe<BiddingCompleteEvent>(this.OnBiddingComplete); // Listen to bidding completion
+        GameEventDispatcher.Subscribe<BiddingNoBidsEvent>(this.OnBiddingNoBids); // Listen to no bids event
 
         AddPlayers();                                              // Create players for the match
     }
@@ -193,6 +194,7 @@ public class GameStage : Stage, IDeckOwner
 
         GameEventDispatcher.UnSubscribe<BeloteCard.Played>(this.OnCardPlayed); // Stop listening
         GameEventDispatcher.UnSubscribe<BiddingCompleteEvent>(this.OnBiddingComplete); // Stop listening
+        GameEventDispatcher.UnSubscribe<BiddingNoBidsEvent>(this.OnBiddingNoBids); // Stop listening
 
         foreach (Player player in m_players)
         {
@@ -297,99 +299,364 @@ public class GameStage : Stage, IDeckOwner
 
     protected void DealCards()
     {
+        Debug.Log($"[GameStage] === DEALING CARDS FOR ROUND {m_currentRound} ===");
+        Debug.Log($"[GameStage] Deck size before dealing: {m_deck.Size}");
+        
+        // Initialize dealer if this is the first round
+        if (Dealer == null)
+        {
+            Dealer = m_players[0]; // Start with first player as dealer
+            Debug.Log($"[GameStage] Initializing dealer: {Dealer.Name}");
+        }
+        else
+        {
+            Debug.Log($"[GameStage] Previous dealer: {Dealer.Name}");
+        }
+        
         // TODO : Cut
         // New dealer is the right player of the current player (anti-clockwise)
+        Player previousDealer = Dealer;
         Dealer = GetRightPlayer(Dealer);                            // Rotate dealer each round
         RoundFirstPlayer = GetRightPlayer(Dealer);                   // First to play after dealer
+        
+        Debug.Log($"[GameStage] Dealer rotation: {previousDealer?.Name} → {Dealer?.Name}");
+        Debug.Log($"[GameStage] New dealer: {Dealer?.Name}, First player (bidder): {RoundFirstPlayer?.Name}");
+        
+        // Debug: Show the complete player order
+        Debug.Log($"[GameStage] Player order (anti-clockwise):");
+        for (int i = 0; i < m_players.Count; i++)
+        {
+            string marker = "";
+            if (m_players[i] == Dealer) marker = " [DEALER]";
+            if (m_players[i] == RoundFirstPlayer) marker = " [FIRST BIDDER]";
+            Debug.Log($"[GameStage]   {i}: {m_players[i].Name}{marker}");
+        }
    
         // Deal 3 cards to each player
+        Debug.Log("[GameStage] Dealing 3 cards to each player...");
         DealCardsToPlayers(3);
+        Debug.Log($"[GameStage] Deck size after dealing 3 cards: {m_deck.Size}");
         
         // Deal 2 more cards to each player (total 5)
+        Debug.Log("[GameStage] Dealing 2 more cards to each player (total 5)...");
         DealCardsToPlayers(2);
+        Debug.Log($"[GameStage] Deck size after dealing 2 more cards: {m_deck.Size}");
 
         foreach (Player player in m_players)
         {
             player.Hand.SortByFamilyAndValue(null);                // Sort with no trump known yet
+            Debug.Log($"[GameStage] {player.Name} has {player.Hand.Size} cards");
         }
+        
+        Debug.Log("[GameStage] === CARD DEALING COMPLETE ===");
     }
 
     //-------------------------------------------------------
     private void DealCardsToPlayers(int cardsPerPlayer)
     {
-        Player player = RoundFirstPlayer;
-        do
+        if (RoundFirstPlayer == null)
         {
-            m_deck.MoveCardsTo(cardsPerPlayer, player.Hand);       // Deal cards to current player
-            player = GetRightPlayer(player);                       // Next player anti-clockwise
-        }
-        while(player != RoundFirstPlayer);
-    }
-
-    //-------------------------------------------------------
-    private void DealCardsForSunContract(Player sunDeclarer, BeloteCard faceUpCard)
-    {
-        // Sun declarer gets the face-up card + 2 additional cards (total 8)
-        if (faceUpCard != null)
-        {
-            sunDeclarer.Hand.AddCard(faceUpCard);                  // Give face-up card to Sun declarer
-            faceUpCard.Owner = sunDeclarer;                        // Set ownership
-            Debug.Log($"{sunDeclarer.Name} receives face-up card: {faceUpCard.Value} of {faceUpCard.Family}");
+            Debug.LogError("[GameStage] Cannot deal cards - RoundFirstPlayer is null!");
+            return;
         }
         
-        // Deal 2 cards to Sun declarer
-        m_deck.MoveCardsTo(2, sunDeclarer.Hand);
-        Debug.Log($"{sunDeclarer.Name} receives 2 additional cards (total: {sunDeclarer.Hand.Size} cards)");
+        // Safety check: Ensure we have enough cards in deck
+        int totalCardsNeeded = cardsPerPlayer * m_players.Count;
+        if (m_deck.Size < totalCardsNeeded)
+        {
+            Debug.LogError($"[GameStage] Cannot deal {totalCardsNeeded} cards - only {m_deck.Size} cards available in deck!");
+            return;
+        }
+        
+        Debug.Log($"[GameStage] Dealing {cardsPerPlayer} cards to each of {m_players.Count} players (total: {totalCardsNeeded} cards)");
+
+            Player player = RoundFirstPlayer;
+            do
+            {
+            Debug.Log($"[GameStage] Dealing {cardsPerPlayer} cards to {player.Name} (deck has {m_deck.Size} cards)");
+            m_deck.MoveCardsTo(cardsPerPlayer, player.Hand);       // Deal cards to current player
+            Debug.Log($"[GameStage] {player.Name} now has {player.Hand.Size} cards (deck has {m_deck.Size} cards remaining)");
+            player = GetRightPlayer(player);                       // Next player anti-clockwise
+            }
+            while(player != RoundFirstPlayer);
+        }
+
+    //-------------------------------------------------------
+    private void DealRemainingCardsAfterContract(Player contractMaker, BeloteCard faceUpCard)
+    {
+        Debug.Log($"[GameStage] === DEALING REMAINING CARDS AFTER CONTRACT ===");
+        Debug.Log($"[GameStage] Contract maker: {contractMaker.Name}");
+        Debug.Log($"[GameStage] Face-up card: {(faceUpCard != null ? $"{faceUpCard.Value} of {faceUpCard.Family}" : "None")}");
+        
+        // Contract maker gets the face-up card + 2 additional cards (total 8)
+        if (faceUpCard != null)
+        {
+            contractMaker.Hand.AddCard(faceUpCard);                // Give face-up card to contract maker
+            faceUpCard.Owner = contractMaker;                      // Set ownership
+            Debug.Log($"[GameStage] {contractMaker.Name} receives face-up card: {faceUpCard.Value} of {faceUpCard.Family}");
+        }
+        
+        // Deal 2 additional cards to contract maker (since they already got the face-up card)
+        m_deck.MoveCardsTo(2, contractMaker.Hand);
+        Debug.Log($"[GameStage] {contractMaker.Name} receives 2 additional cards (total: {contractMaker.Hand.Size} cards)");
         
         // Deal 3 cards to all other players
         foreach (Player player in m_players)
         {
-            if (player != sunDeclarer)
+            if (player != contractMaker)
             {
                 m_deck.MoveCardsTo(3, player.Hand);
-                Debug.Log($"{player.Name} receives 3 additional cards (total: {player.Hand.Size} cards)");
+                Debug.Log($"[GameStage] {player.Name} receives 3 additional cards (total: {player.Hand.Size} cards)");
             }
         }
+        
+        Debug.Log($"[GameStage] Contract completed - {contractMaker.Name} has {contractMaker.Hand.Size} cards total");
     }
 
     //----------------------------------------------
     void StartRound()
     {
         m_currentRound++;                                          // Advance round index
+        Debug.Log($"[GameStage] === STARTING ROUND {m_currentRound} ===");
+        Debug.Log($"[GameStage] StartRound() called - this should NOT happen after Trump confirmation!");
+        Debug.Log($"[GameStage] Stack trace:");
+        System.Diagnostics.StackTrace stackTrace = new System.Diagnostics.StackTrace();
+        for (int i = 1; i < Mathf.Min(stackTrace.FrameCount, 5); i++)
+        {
+            Debug.Log($"[GameStage]   {i}: {stackTrace.GetFrame(i).GetMethod().Name}");
+        }
 
+        // Only collect cards if this is not the first round (round 1)
+        // Now that we start from 0, the first round will be 1, so we collect cards for round 2+
+        if (m_currentRound > 1)
+        {
+            Debug.Log($"[GameStage] Collecting cards for Round {m_currentRound} (not first round)");
+            Debug.Log($"[GameStage] This ensures all cards are returned to deck before new dealing");
+            // Collect all cards from players and return to deck
+            CollectAllCardsToDeck();
+        }
+        else
+        {
+            Debug.Log($"[GameStage] Skipping card collection for Round {m_currentRound} (first round)");
+        }
+
+        Debug.Log($"[GameStage] Dealing 3+2 cards to each player for Round {m_currentRound}");
         DealCards();                                               // Distribute cards
+
+        // Reset bidding system for new round
+        m_biddingSystem.Reset();
+        Debug.Log($"[GameStage] Starting Round {m_currentRound} - Bidding system reset");
 
         // Start bidding round
         StartBiddingRound();
     }
 
     //----------------------------------------------
+    private void CollectAllCardsToDeck()
+    {
+        Debug.Log("[GameStage] === COLLECTING ALL CARDS TO DECK ===");
+        Debug.Log($"[GameStage] Starting card collection. Deck size before: {m_deck.Size}");
+        
+        // Clear the deck first
+        Debug.Log($"[GameStage] Clearing deck. Deck size before clear: {m_deck.Size}");
+        m_deck.Clear();
+        Debug.Log($"[GameStage] Deck cleared. Deck size after clear: {m_deck.Size}");
+        
+        int totalCardsCollected = 0;
+        
+        // Collect all cards from all players' hands
+        foreach (Player player in m_players)
+        {
+            if (player.Hand != null && player.Hand.Size > 0)
+            {
+                int cardsInHand = player.Hand.Size;
+                Debug.Log($"[GameStage] Collecting {cardsInHand} cards from {player.Name}");
+                
+                // Debug: List the actual cards being collected
+                for (int i = 0; i < player.Hand.Size; i++)
+                {
+                    BeloteCard card = player.Hand.Cards[i];
+                    Debug.Log($"[GameStage]   - Card {i+1}: {card.Value} of {card.Family}");
+                }
+                
+                // Move all cards from player's hand back to deck
+                player.Hand.MoveCardsTo(player.Hand.Size, m_deck);
+                totalCardsCollected += cardsInHand;
+                
+                Debug.Log($"[GameStage] After collection, {player.Name} now has {player.Hand.Size} cards");
+            }
+            else
+            {
+                Debug.Log($"[GameStage] {player.Name} has no cards to collect (Hand is null or empty)");
+            }
+        }
+        
+        // Also collect any cards from current fold if it exists
+        if (m_currentFold != null && m_currentFold.Deck != null && m_currentFold.Deck.Size > 0)
+        {
+            int cardsInFold = m_currentFold.Deck.Size;
+            Debug.Log($"[GameStage] Collecting {cardsInFold} cards from current fold");
+            m_currentFold.Deck.MoveCardsTo(m_currentFold.Deck.Size, m_deck);
+            totalCardsCollected += cardsInFold;
+        }
+        else
+        {
+            Debug.Log($"[GameStage] No cards in current fold to collect");
+        }
+        
+        // Also collect the face-up card if it exists
+        if (FaceUpCard != null)
+        {
+            Debug.Log($"[GameStage] Collecting face-up card: {FaceUpCard.Value} of {FaceUpCard.Family}");
+            m_deck.AddCard(FaceUpCard);
+            FaceUpCard.Owner = null; // Reset owner
+            totalCardsCollected++;
+        }
+        else
+        {
+            Debug.Log($"[GameStage] No face-up card to collect");
+        }
+        
+        Debug.Log($"[GameStage] Total cards collected: {totalCardsCollected}, Deck size after collection: {m_deck.Size}");
+        
+        // If no cards were collected, we need to reinitialize the deck
+        if (m_deck.Size == 0)
+        {
+            Debug.LogWarning("[GameStage] No cards collected! Reinitializing deck.");
+            m_deck.Init(Definition.Scoring);
+        }
+        
+        // Shuffle the deck after collecting all cards
+        m_deck.Shuffle();
+        
+        Debug.Log($"[GameStage] Final deck size after shuffle: {m_deck.Size}");
+        
+        // Validate deck integrity - check for duplicates
+        ValidateDeckIntegrity();
+        
+        // Send event to notify renderer that cards have been collected
+        CardsCollectedEvent evt = Pools.Claim<CardsCollectedEvent>();
+        GameEventDispatcher.SendEvent(evt);
+
+        Debug.Log("[GameStage] === CARD COLLECTION COMPLETE ===");
+        
+        // Additional validation
+        if (m_deck.Size < 32)
+        {
+            Debug.LogWarning($"[GameStage] Deck has only {m_deck.Size} cards, expected 32. This might cause issues.");
+        }
+    }
+
+    //----------------------------------------------
+    private void ValidateDeckIntegrity()
+    {
+        Debug.Log("[GameStage] === VALIDATING DECK INTEGRITY ===");
+        
+        if (m_deck.Size != 32)
+        {
+            Debug.LogError($"[GameStage] Deck integrity check failed: Expected 32 cards, got {m_deck.Size}");
+            return;
+        }
+        
+        // Check for duplicate cards
+        HashSet<string> cardSignatures = new HashSet<string>();
+        bool hasDuplicates = false;
+        
+        for (int i = 0; i < m_deck.Size; i++)
+        {
+            BeloteCard card = m_deck.Cards[i];
+            string signature = $"{card.Value}_{card.Family}";
+            
+            if (cardSignatures.Contains(signature))
+            {
+                Debug.LogError($"[GameStage] DUPLICATE CARD FOUND: {card.Value} of {card.Family} at position {i}");
+                hasDuplicates = true;
+            }
+            else
+            {
+                cardSignatures.Add(signature);
+            }
+        }
+        
+        if (hasDuplicates)
+        {
+            Debug.LogError("[GameStage] Deck integrity check failed: Duplicate cards found!");
+        }
+        else
+        {
+            Debug.Log("[GameStage] Deck integrity check passed: No duplicate cards found");
+        }
+        
+        Debug.Log($"[GameStage] Deck contains {cardSignatures.Count} unique cards out of {m_deck.Size} total cards");
+    }
+
+    //----------------------------------------------
     void StartBiddingRound()
     {
+        Debug.Log($"[GameStage] Starting bidding round for Round {m_currentRound}");
+        Debug.Log($"[GameStage] Deck size at start of bidding: {m_deck.Size}");
+        
         // Reset all players' bidding state
         foreach (Player player in m_players)
         {
             player.ResetBidding();
         }
 
+        // Check if deck has enough cards
+        if (m_deck.Size < 1)
+        {
+            Debug.LogError("[GameStage] Deck is empty! Cannot start bidding round.");
+            Debug.LogError($"[GameStage] Deck size: {m_deck.Size}");
+            return;
+        }
+
         // Reveal face-up card (proposed trump suit)
         BeloteDeck tempDeck = new BeloteDeck();
         m_deck.MoveCardsTo(1, tempDeck); // Move one card to temp deck
+        
+        if (tempDeck.Size == 0)
+        {
+            Debug.LogError("[GameStage] Failed to draw face-up card from deck!");
+            return;
+        }
+        
         BeloteCard faceUpCard = tempDeck.Cards[0]; // Get the card
         faceUpCard.Owner = null; // Face-up card belongs to no one
         
         // Store face-up card for visual display
         FaceUpCard = faceUpCard;
+        Debug.Log($"[GameStage] Revealed face-up card: {faceUpCard.Value} of {faceUpCard.Family}");
 
         // Start bidding with the first player
+        Debug.Log($"[GameStage] Starting bidding with first bidder: {RoundFirstPlayer?.Name}");
+        Debug.Log($"[GameStage] Dealer is: {Dealer?.Name}");
+        Debug.Log($"[GameStage] First bidder should be to the right of dealer: {GetRightPlayer(Dealer)?.Name}");
+        
+        // Verify the bidding order matches our expectation
+        Debug.Log($"[GameStage] Bidding order verification:");
+        for (int i = 0; i < m_players.Count; i++)
+        {
+            string markers = "";
+            if (m_players[i] == Dealer) markers += " [DEALER]";
+            if (m_players[i] == RoundFirstPlayer) markers += " [FIRST BIDDER]";
+            Debug.Log($"[GameStage]   Bidder {i}: {m_players[i].Name}{markers}");
+        }
+        
         m_biddingSystem.StartBidding(m_players, RoundFirstPlayer, faceUpCard);
+        Debug.Log($"[GameStage] Bidding started with first bidder: {RoundFirstPlayer?.Name}");
     }
 
     //----------------------------------------------
     void OnBiddingComplete(BiddingCompleteEvent evt)
     {
+        Debug.Log($"[GameStage] === OnBiddingComplete called ===");
+        Debug.Log($"[GameStage] WinningBidder: {evt.WinningBidder?.Name}");
+        Debug.Log($"[GameStage] WinningBid: {evt.WinningBid?.ToString()}");
+        Debug.Log($"[GameStage] SunDeclared: {evt.SunDeclared}");
+        
         if (evt.WinningBidder != null && evt.WinningBid != null)
         {
+            Debug.Log($"[GameStage] Contract made - proceeding with card dealing completion");
             // Set the winning bidder and contract
             Bidder = evt.WinningBidder;
             
@@ -409,17 +676,8 @@ public class GameStage : Stage, IDeckOwner
             BeloteCard faceUpCardToClean = FaceUpCard;
             FaceUpCard = null;
             
-            // Deal remaining cards based on contract type
-            if (evt.SunDeclared)
-            {
-                // Sun contract: Winner gets face-up card + 2 cards, others get 3 cards
-                DealCardsForSunContract(evt.WinningBidder, faceUpCardToClean);
-            }
-            else
-            {
-                // Trump contract: All players get 3 additional cards
-                DealCardsToPlayers(3);
-            }
+            // Deal remaining cards to complete all hands to 8 cards
+            DealRemainingCardsAfterContract(evt.WinningBidder, faceUpCardToClean);
 
             // Resort all hands with known trump
             foreach (Player player in m_players)
@@ -438,8 +696,43 @@ public class GameStage : Stage, IDeckOwner
         else
         {
             // Case C: All passed, no contract - start new round with new dealer
-            Debug.Log("No contract made - starting new round with new dealer");
+            Debug.Log("[GameStage] === NO CONTRACT MADE - STARTING NEW ROUND ===");
+            Debug.Log("[GameStage] All players passed in bidding - starting new round with new dealer");
             StartRound();
+        }
+    }
+
+    //----------------------------------------------
+    void OnBiddingNoBids(BiddingNoBidsEvent evt)
+    {
+        if (evt.BothRoundsNoBids)
+        {
+            // Both bidding rounds had no Trump/Sun bids - start new round with new dealer
+            Debug.Log("[GameStage] === BOTH ROUNDS PASSED - STARTING NEW ROUND ===");
+            Debug.Log("[GameStage] Both bidding rounds had no Trump/Sun bids - resetting everything and starting new round with new dealer");
+            Debug.Log("[GameStage] IMPORTANT: No contract made - will NOT deal remaining cards, will collect all cards and restart");
+            
+            // Debug: Check deck size before starting new round
+            Debug.Log($"[GameStage] Deck size before starting new round: {m_deck.Size}");
+            
+            // Debug: Check players' hands before starting new round
+            foreach (Player player in m_players)
+            {
+                Debug.Log($"[GameStage] {player.Name} has {player.Hand.Size} cards before new round");
+            }
+            
+            // Debug: Check face-up card
+            if (FaceUpCard != null)
+            {
+                Debug.Log($"[GameStage] Face-up card to be collected: {FaceUpCard.Value} of {FaceUpCard.Family}");
+            }
+            else
+            {
+                Debug.Log($"[GameStage] No face-up card to collect");
+            }
+            
+            StartRound();
+            Debug.Log("[GameStage] Started new round after no contract");
         }
     }
 
@@ -456,7 +749,7 @@ public class GameStage : Stage, IDeckOwner
                 evt.CurrentBidder = m_biddingSystem.CurrentBidder;
                 evt.HighestBid = m_biddingSystem.HighestBid;
                 evt.Round = m_biddingSystem.CurrentRound;
-                GameEventDispatcher.SendEvent(evt);
+        GameEventDispatcher.SendEvent(evt);
             }
         }
     }
@@ -570,6 +863,14 @@ public class GameStage : Stage, IDeckOwner
         public override void Reset()
         {
 
+        }
+    }
+
+    public class CardsCollectedEvent : PooledEvent
+    {
+        public override void Reset()
+        {
+            // No specific data needed for this event
         }
     }
 }
