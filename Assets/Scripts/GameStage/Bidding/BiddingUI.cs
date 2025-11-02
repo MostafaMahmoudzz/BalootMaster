@@ -529,10 +529,12 @@ public class BiddingUI : MonoBehaviour
                             if (GUI.Button(new Rect(110, 100, 120, 30), "Another Trump"))
                             {
                                 // Another Trump means choosing a different suit (not face-up)
+                                // Submit a placeholder bid - the actual suit will be selected next
                                 Card32Family faceUpSuit = m_faceUpCard != null ? m_faceUpCard.Family : Card32Family.Clubs;
-                                Card32Family anotherSuit = GetAnotherTrumpSuit(faceUpSuit);
-                                SubmitBid(Bid.CreateTrump(anotherSuit));
+                                Card32Family placeholderSuit = GetAnotherTrumpSuit(faceUpSuit); // Just a placeholder
+                                SubmitBid(Bid.CreateTrump(placeholderSuit));
                                 m_anotherTrumpChosen = true; // Mark that Another Trump was chosen
+                                // The system will now wait for trump suit selection via ShowTrumpSuitSelection()
                             }
                             if (GUI.Button(new Rect(240, 100, 80, 30), "Pass"))
                             {

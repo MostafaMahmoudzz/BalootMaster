@@ -225,6 +225,29 @@ public class BelootBiddingSystem
             return true;
         }
 
+        // Check if Another Trump was declared in Round 2 (wait for trump suit selection if human, immediate end if AI)
+        if (m_currentBiddingRound == BiddingRound.BiddingRound2 && m_anotherTrumpChosen)
+        {
+            player.HasBid = true;
+            
+            // Check if player is human - if so, wait for suit selection UI
+            if (player is HumanPlayer)
+            {
+                Debug.Log($"[BiddingSystem] {player.Name} (Human) declared Another Trump - waiting for trump suit selection");
+                m_waitingForTrumpSuitSelection = true;
+                // Don't move to next bidder, don't finalize yet - wait for trump suit selection via UI
+                return true;
+            }
+            else
+            {
+                // AI player - suit already selected, finalize immediately
+                Debug.Log($"[BiddingSystem] {player.Name} (AI) declared Another Trump ({bid.Suit}) - ending bidding immediately");
+                m_biddingComplete = true;
+                FinalizeBidding();
+                return true;
+            }
+        }
+
         // Mark this player as having bid
         player.HasBid = true;
 
@@ -336,8 +359,9 @@ public class BelootBiddingSystem
                 else if (m_trumpTaker == null && bid.Suit != m_faceUpCard.Family)
                 {
                     // Round 2, Case B: Someone chose "Another Trump" (different from face-up suit)
+                    // Set flag and wait for trump suit selection, then immediately finalize
                     m_anotherTrumpChosen = true;
-                    Debug.Log($"[BiddingSystem] {player.Name} chose Another Trump ({bid.Suit}) in Round 2 - limiting remaining players to Sun/Pass");
+                    Debug.Log($"[BiddingSystem] {player.Name} chose Another Trump ({bid.Suit}) in Round 2 - waiting for suit selection, then will end bidding immediately");
                 }
             }
         }
@@ -494,11 +518,9 @@ public class BelootBiddingSystem
                     }
                     else if (m_anotherTrumpChosen)
                     {
-                        // Another Trump was chosen - need to wait for trump suit selection
-                        Debug.Log("[BiddingSystem] Round 2 complete with Another Trump chosen - waiting for trump suit selection");
-                        m_waitingForTrumpSuitSelection = true;
-                        // DON'T set m_biddingComplete = true yet - wait for trump suit selection
-                        // Don't finalize yet - wait for suit selection
+                        // Another Trump was chosen - this shouldn't happen as bidding should end after trump suit selection
+                        Debug.LogWarning("[BiddingSystem] Round 2 complete with Another Trump chosen - this shouldn't happen (should have ended after suit selection)");
+                        // This case shouldn't occur as SelectTrumpSuit should have already finalized
                     }
                     else
                     {
