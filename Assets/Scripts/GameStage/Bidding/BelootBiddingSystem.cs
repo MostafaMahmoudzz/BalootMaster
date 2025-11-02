@@ -142,13 +142,22 @@ public class BelootBiddingSystem
         m_currentBidderIndex = m_biddingOrder.IndexOf(firstBidder);
         Debug.Log($"[FIRST BIDDER DEBUG] First bidder index: {m_currentBidderIndex}");
         
-        // Show bidding order for verification
-        Debug.Log($"[FIRST BIDDER DEBUG] Bidding order:");
+        // ============================================
+        // CLEAR BIDDING SYSTEM INFO - READ THIS!
+        // ============================================
+        Debug.LogError("╔════════════════════════════════════════════════════════╗");
+        Debug.LogError($"║ BIDDING SYSTEM STARTED");
+        Debug.LogError($"║ First bidder parameter: {firstBidder?.Name}");
+        Debug.LogError($"║ First bidder index: {m_currentBidderIndex}");
+        Debug.LogError($"║ CurrentBidder property: {CurrentBidder?.Name}");
+        Debug.LogError($"║ Bidding order in system:");
         for (int i = 0; i < m_biddingOrder.Count; i++)
         {
             string marker = (i == m_currentBidderIndex) ? " ← FIRST BIDDER" : "";
-            Debug.Log($"[FIRST BIDDER DEBUG]   {i}: {m_biddingOrder[i].Name}{marker}");
+            Debug.LogError($"║   [{i}]: {m_biddingOrder[i].Name}{marker}");
         }
+        Debug.LogError("╚════════════════════════════════════════════════════════╝");
+        // ============================================
         
         if (m_currentBidderIndex == -1)
         {
@@ -551,20 +560,36 @@ public class BelootBiddingSystem
         m_round2NoBids = false; // Reset Round 2 no bids flag
         Debug.Log($"[FIRST BIDDER DEBUG] StartBiddingRound2 - Reset m_round2NoBids to false");
 
-        // Determine starting player for Round 2
-        // IMPORTANT: Bidding continues in normal anti-clockwise order from where Round 1 ended
-        // The trump taker does NOT jump to the front - they get their turn in the normal order
-        if (m_trumpTaker != null)
+        // CRITICAL FIX: Round 2 must start with the SAME first bidder as Round 1
+        // Reset current bidder index back to the first bidder (player to dealer's right)
+        if (m_firstBidder != null)
         {
-            Debug.Log($"[BiddingSystem] Round 2: Trump taker is {m_trumpTaker.Name}, but bidding continues in normal order");
-            Debug.Log($"[BiddingSystem] Round 2: Current bidder index remains {m_currentBidderIndex} (normal anti-clockwise order)");
+            m_currentBidderIndex = m_biddingOrder.IndexOf(m_firstBidder);
+            Debug.Log($"[BiddingSystem] Round 2: Resetting to first bidder {m_firstBidder.Name} (index: {m_currentBidderIndex})");
+            
+            if (m_currentBidderIndex == -1)
+            {
+                Debug.LogError($"[BiddingSystem] ERROR: First bidder {m_firstBidder.Name} not found in bidding order!");
+                m_currentBidderIndex = 0; // Fallback
+            }
         }
         else
         {
-            // Case B: Start with player to right of dealer (same as Round 1)
-            // This is already set from Round 1
-            Debug.Log("[BiddingSystem] Round 2 starting with dealer's right (no trump taker)");
+            Debug.LogError("[BiddingSystem] ERROR: m_firstBidder is null in Round 2!");
+            m_currentBidderIndex = 0; // Fallback to first player
         }
+
+        // ============================================
+        // VERIFY ROUND 2 START
+        // ============================================
+        Debug.LogError("╔════════════════════════════════════════════════════════╗");
+        Debug.LogError($"║ ROUND 2 BIDDING STARTED");
+        Debug.LogError($"║ First bidder (should be same as Round 1): {m_firstBidder?.Name}");
+        Debug.LogError($"║ Current bidder index: {m_currentBidderIndex}");
+        Debug.LogError($"║ Current bidder: {CurrentBidder?.Name}");
+        Debug.LogError($"║ Trump taker from Round 1: {m_trumpTaker?.Name ?? "None"}");
+        Debug.LogError("╚════════════════════════════════════════════════════════╝");
+        // ============================================
 
         // Send Round 2 start event
         BiddingRound2StartEvent evt = Pools.Claim<BiddingRound2StartEvent>();

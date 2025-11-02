@@ -64,6 +64,12 @@ public class BiddingUI : MonoBehaviour
             m_stage = beloteGame.Stage;
         }
         
+        // CRITICAL: Check if UI elements are assigned
+        Debug.LogWarning($"[BiddingUI] Checking UI elements:");
+        Debug.LogWarning($"  - currentBidderText: {(currentBidderText != null ? "✅ ASSIGNED" : "❌ NULL")}");
+        Debug.LogWarning($"  - biddingPanel: {(biddingPanel != null ? "✅ ASSIGNED" : "❌ NULL")}");
+        Debug.LogWarning($"  - roundText: {(roundText != null ? "✅ ASSIGNED" : "❌ NULL")}");
+        
         // Subscribe to bidding events
         GameEventDispatcher.Subscribe<BiddingStartEvent>(this.OnBiddingStart);
         GameEventDispatcher.Subscribe<BiddingCompleteEvent>(this.OnBiddingComplete);
@@ -78,6 +84,26 @@ public class BiddingUI : MonoBehaviour
 
         // Hide UI initially
         HideBiddingUI();
+    }
+
+    //----------------------------------------------
+    void Update()
+    {
+        // بس نحدث الـ UI كل frame
+        if (m_isBiddingActive && m_showBiddingUI)
+        {
+            RefreshCurrentBidderDisplay();
+        }
+    }
+    
+    //----------------------------------------------
+    void LateUpdate()
+    {
+        // تأكد تاني في آخر الـ frame إن الـ UI صح
+        if (m_isBiddingActive && m_showBiddingUI)
+        {
+            RefreshCurrentBidderDisplay();
+        }
     }
 
     void OnDestroy()
@@ -120,6 +146,8 @@ public class BiddingUI : MonoBehaviour
         Debug.Log($"[FIRST BIDDER DEBUG] BiddingUI OnBiddingStart - CurrentBidder: {evt.CurrentBidder?.Name}, Round: {evt.Round}");
         
         m_isBiddingActive = true;
+        
+        // Cache the event values (fallback only)
         m_currentBidder = evt.CurrentBidder;
         m_highestBid = evt.HighestBid;
         m_currentBiddingRound = evt.Round;
@@ -131,7 +159,17 @@ public class BiddingUI : MonoBehaviour
         m_ignoreBiddingTurnEvents = false;
         m_preventBidSubmission = false;
         
-        Debug.Log($"[FIRST BIDDER DEBUG] BiddingUI set m_currentBidder to: {m_currentBidder?.Name}");
+        Debug.Log($"[FIRST BIDDER DEBUG] BiddingUI cached m_currentBidder: {m_currentBidder?.Name}");
+        
+        // CRITICAL: Verify against system value
+        if (m_stage != null && m_stage.BiddingSystem != null && m_stage.BiddingSystem.CurrentBidder != null)
+        {
+            Debug.LogWarning($"[VERIFY] BiddingStart Event says: {evt.CurrentBidder?.Name}, System says: {m_stage.BiddingSystem.CurrentBidder?.Name}");
+            if (evt.CurrentBidder != m_stage.BiddingSystem.CurrentBidder)
+            {
+                Debug.LogError($"[BUG DETECTED] BiddingStart event bidder ({evt.CurrentBidder?.Name}) DOES NOT MATCH system bidder ({m_stage.BiddingSystem.CurrentBidder?.Name})!");
+            }
+        }
         
         ShowBiddingUI();
         UpdateBiddingDisplay(evt.Round, evt.FaceUpCard);
@@ -208,11 +246,22 @@ public class BiddingUI : MonoBehaviour
             return;
         }
         
+        // Cache the event values (fallback only)
         m_currentBidder = evt.CurrentBidder;
         m_highestBid = evt.HighestBid;
         m_currentBiddingRound = evt.Round;
         
-        Debug.Log($"[FIRST BIDDER DEBUG] BiddingUI updated m_currentBidder to: {m_currentBidder?.Name}");
+        Debug.Log($"[FIRST BIDDER DEBUG] BiddingUI cached m_currentBidder: {m_currentBidder?.Name}");
+        
+        // CRITICAL: Verify against system value
+        if (m_stage != null && m_stage.BiddingSystem != null && m_stage.BiddingSystem.CurrentBidder != null)
+        {
+            Debug.LogWarning($"[VERIFY] Event says: {evt.CurrentBidder?.Name}, System says: {m_stage.BiddingSystem.CurrentBidder?.Name}");
+            if (evt.CurrentBidder != m_stage.BiddingSystem.CurrentBidder)
+            {
+                Debug.LogError($"[BUG DETECTED] Event bidder ({evt.CurrentBidder?.Name}) DOES NOT MATCH system bidder ({m_stage.BiddingSystem.CurrentBidder?.Name})!");
+            }
+        }
         
         UpdateBiddingDisplay(evt.Round, null);
     }
@@ -222,12 +271,23 @@ public class BiddingUI : MonoBehaviour
     {
         Debug.Log($"[FIRST BIDDER DEBUG] BiddingUI OnBiddingRound2Start - CurrentBidder: {evt.CurrentBidder?.Name}, Trump taker: {evt.TrumpTaker?.Name}");
         
+        // Cache the event values (fallback only)
         m_currentBidder = evt.CurrentBidder;
         m_currentBiddingRound = BelootBiddingSystem.BiddingRound.BiddingRound2;
         m_faceUpCard = evt.FaceUpCard;
         m_anotherTrumpChosen = false;
         
-        Debug.Log($"[FIRST BIDDER DEBUG] BiddingUI set m_currentBidder to: {m_currentBidder?.Name}");
+        Debug.Log($"[FIRST BIDDER DEBUG] BiddingUI cached m_currentBidder: {m_currentBidder?.Name}");
+        
+        // CRITICAL: Verify against system value
+        if (m_stage != null && m_stage.BiddingSystem != null && m_stage.BiddingSystem.CurrentBidder != null)
+        {
+            Debug.LogWarning($"[VERIFY] Event says: {evt.CurrentBidder?.Name}, System says: {m_stage.BiddingSystem.CurrentBidder?.Name}");
+            if (evt.CurrentBidder != m_stage.BiddingSystem.CurrentBidder)
+            {
+                Debug.LogError($"[BUG DETECTED] Round 2 event bidder ({evt.CurrentBidder?.Name}) DOES NOT MATCH system bidder ({m_stage.BiddingSystem.CurrentBidder?.Name})!");
+            }
+        }
         
         ShowBiddingUI();
         UpdateBiddingDisplay(BelootBiddingSystem.BiddingRound.BiddingRound2, evt.FaceUpCard);
@@ -278,6 +338,27 @@ public class BiddingUI : MonoBehaviour
     }
 
     //----------------------------------------------
+    void RefreshCurrentBidderDisplay()
+    {
+        // ببساطة: خلي الـ text = القيمة الصحيحة من الـ system
+        if (currentBidderText == null)
+        {
+            Debug.LogWarning("[BiddingUI] currentBidderText is NULL! Can't update display!");
+            return;
+        }
+
+        if (m_stage?.BiddingSystem?.CurrentBidder != null)
+        {
+            // استخدم القيمة الصحيحة من الـ system مباشرة
+            currentBidderText.text = $"Current Bidder: {m_stage.BiddingSystem.CurrentBidder.Name}";
+        }
+        else
+        {
+            currentBidderText.text = "Current Bidder: None";
+        }
+    }
+
+    //----------------------------------------------
     void UpdateBiddingDisplay(BelootBiddingSystem.BiddingRound biddingRound, BeloteCard faceUpCard)
     {
         if (!m_showBiddingUI)
@@ -305,11 +386,8 @@ public class BiddingUI : MonoBehaviour
             faceUpCardText.text = $"Face-up Card: {faceUpCard.Family}";
         }
 
-        // Update current bidder text
-        if (currentBidderText != null)
-        {
-            currentBidderText.text = $"Current Bidder: {m_currentBidder?.Name ?? "None"}";
-        }
+        // FORCE UPDATE: Always refresh current bidder from system
+        RefreshCurrentBidderDisplay();
 
         // Update highest bid text
         if (highestBidText != null)
@@ -409,25 +487,34 @@ public class BiddingUI : MonoBehaviour
             
             GUI.Box(new Rect(10, 10, 360, 250), "Bidding Round");
             
+            // Get bidding system reference
+            BelootBiddingSystem systemBidding = m_stage.BiddingSystem;
+            
             // Debug: Show current round
             string biddingRoundText = m_currentBiddingRound == BelootBiddingSystem.BiddingRound.BiddingRound1 ? "Round 1" : "Round 2";
             GUI.Label(new Rect(20, 20, 280, 20), $"Current Round: {biddingRoundText}");
             
-            if (m_currentBidder != null)
+            // ALWAYS use the ACTUAL system value, not cached UI value
+            if (systemBidding != null && systemBidding.CurrentBidder != null)
             {
-                GUI.Label(new Rect(20, 40, 280, 20), $"Current Bidder: {m_currentBidder.Name}");
-                // Debug: Show what the bidding system thinks the current bidder is
-                BelootBiddingSystem systemBidding = m_stage.BiddingSystem;
-                if (systemBidding != null && systemBidding.CurrentBidder != null)
-                {
-                    GUI.Label(new Rect(20, 200, 280, 20), $"System CurrentBidder: {systemBidding.CurrentBidder.Name}");
-                }
+                GUI.Label(new Rect(20, 40, 280, 20), $"Current Bidder: {systemBidding.CurrentBidder.Name}");
                 
-                // Debug: Show dealer information
+                // Show dealer information
                 if (m_stage != null && m_stage.Dealer != null)
                 {
-                    GUI.Label(new Rect(20, 220, 280, 20), $"Dealer: {m_stage.Dealer.Name}");
+                    GUI.Label(new Rect(20, 200, 280, 20), $"Dealer: {m_stage.Dealer.Name}");
                 }
+                
+                // Show round first player info
+                if (m_stage != null && m_stage.RoundFirstPlayer != null)
+                {
+                    GUI.Label(new Rect(20, 220, 280, 20), $"First Bidder: {m_stage.RoundFirstPlayer.Name}");
+                }
+            }
+            else if (m_currentBidder != null)
+            {
+                // Fallback if system bidding not available
+                GUI.Label(new Rect(20, 40, 280, 20), $"Current Bidder: {m_currentBidder.Name}");
             }
             
             if (m_highestBid != null && !m_highestBid.IsPass)
@@ -438,27 +525,24 @@ public class BiddingUI : MonoBehaviour
             {
                 GUI.Label(new Rect(20, 60, 280, 20), "Highest Bid: None");
             }
-
-            // Get bidding system to check trump taker
-            BelootBiddingSystem biddingSystem = m_stage.BiddingSystem;
             
             // Check if we're waiting for trump suit selection (show to winning bidder, not current bidder)
-            if (biddingSystem.WaitingForTrumpSuitSelection && biddingSystem.WinningBidder is HumanPlayer)
+            if (systemBidding != null && systemBidding.WaitingForTrumpSuitSelection && systemBidding.WinningBidder is HumanPlayer)
             {
-                Debug.Log($"[BiddingUI] Showing trump suit selection to winning bidder: {biddingSystem.WinningBidder?.Name}");
+                Debug.Log($"[BiddingUI] Showing trump suit selection to winning bidder: {systemBidding.WinningBidder?.Name}");
                 ShowTrumpSuitSelection();
                 return;
             }
-            else if (biddingSystem.WaitingForTrumpSuitSelection)
+            else if (systemBidding != null && systemBidding.WaitingForTrumpSuitSelection)
             {
-                Debug.Log($"[BiddingUI] Waiting for trump suit selection but winning bidder is not human: {biddingSystem.WinningBidder?.Name}");
+                Debug.Log($"[BiddingUI] Waiting for trump suit selection but winning bidder is not human: {systemBidding.WinningBidder?.Name}");
             }
             
             if (m_currentBidder is HumanPlayer)
             {
                 GUI.Label(new Rect(20, 80, 280, 20), "Choose your bid:");
                 
-                bool isTrumpTaker = (biddingSystem.TrumpTaker == m_currentBidder);
+                bool isTrumpTaker = (systemBidding != null && systemBidding.TrumpTaker == m_currentBidder);
                 bool biddingRound1 = (m_currentBiddingRound == BelootBiddingSystem.BiddingRound.BiddingRound1);
                 
                 
@@ -500,7 +584,7 @@ public class BiddingUI : MonoBehaviour
                 else
                 {
                     // Round 2: Different options based on player's Round 1 action and if Another Trump was chosen
-                    bool anotherTrumpChosen = m_anotherTrumpChosen || biddingSystem.AnotherTrumpChosen;
+                    bool anotherTrumpChosen = m_anotherTrumpChosen || (systemBidding != null && systemBidding.AnotherTrumpChosen);
                     if (anotherTrumpChosen)
                     {
                         // If Another Trump was chosen, all remaining players can only choose Sun or Pass

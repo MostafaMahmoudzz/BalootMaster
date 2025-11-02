@@ -152,6 +152,11 @@ public class GameStage : Stage, IDeckOwner
         get { return m_biddingSystem; }
     }
 
+    public int CurrentRound
+    {
+        get { return m_currentRound; }
+    }
+
     //----------------------------------------------
     public GameStage()
     {
@@ -307,11 +312,17 @@ public class GameStage : Stage, IDeckOwner
         }
         
         // TODO : Cut
-        // New dealer is the right player of the current player (anti-clockwise)
+        // Dealer rotation: Each round, the dealer rotates to the right (anti-clockwise)
+        // Example: South → East → North → West → South
         Player previousDealer = Dealer;
         Dealer = GetRightPlayer(Dealer);                            // Rotate dealer each round
-        RoundFirstPlayer = GetRightPlayer(Dealer);                   // First to play after dealer
         
+        // Card distribution: The dealer distributes cards to the player on their right first
+        // Then continues anti-clockwise: E→N→W→S, N→W→S→E, W→S→E→N, S→E→N→W
+        RoundFirstPlayer = GetRightPlayer(Dealer);                   // First player to receive cards
+        
+        Debug.Log($"[GameStage] Previous Dealer: {previousDealer?.Name} → New Dealer: {Dealer?.Name}");
+        Debug.Log($"[GameStage] {Dealer?.Name} deals to {RoundFirstPlayer?.Name} first (player to dealer's right)");
         Debug.Log($"[FIRST BIDDER DEBUG] Dealer: {Dealer?.Name}, First bidder: {RoundFirstPlayer?.Name}");
         Debug.Log($"[FIRST BIDDER DEBUG] Expected first bidder (right of dealer): {GetRightPlayer(Dealer)?.Name}");
    
@@ -352,17 +363,23 @@ public class GameStage : Stage, IDeckOwner
         }
         
         Debug.Log($"[GameStage] Dealing {cardsPerPlayer} cards to each of {m_players.Count} players (total: {totalCardsNeeded} cards)");
+        Debug.Log($"[GameStage] Distribution order starting from {RoundFirstPlayer?.Name} (player to dealer's right), going anti-clockwise");
 
-            Player player = RoundFirstPlayer;
-            do
-            {
-            Debug.Log($"[GameStage] Dealing {cardsPerPlayer} cards to {player.Name} (deck has {m_deck.Size} cards)");
+        // Deal cards starting from the player to the right of the dealer
+        // Continue anti-clockwise until all players have received cards
+        // Example: If dealer is East, deal to North → West → South → East
+        Player player = RoundFirstPlayer;
+        int playerCount = 0;
+        do
+        {
+            playerCount++;
+            Debug.Log($"[GameStage] [{playerCount}/{m_players.Count}] Dealing {cardsPerPlayer} cards to {player.Name} (deck has {m_deck.Size} cards)");
             m_deck.MoveCardsTo(cardsPerPlayer, player.Hand);       // Deal cards to current player
             Debug.Log($"[GameStage] {player.Name} now has {player.Hand.Size} cards (deck has {m_deck.Size} cards remaining)");
-            player = GetRightPlayer(player);                       // Next player anti-clockwise
-            }
-            while(player != RoundFirstPlayer);
+            player = GetRightPlayer(player);                       // Next player anti-clockwise (to the right)
         }
+        while(player != RoundFirstPlayer);
+    }
 
     //-------------------------------------------------------
     private void DealRemainingCardsAfterContract(Player contractMaker, BeloteCard faceUpCard)
@@ -621,6 +638,19 @@ public class GameStage : Stage, IDeckOwner
 
         // Start bidding with the first player (this sends BiddingStartEvent)
         Debug.Log($"[FIRST BIDDER DEBUG] Starting bidding with: {RoundFirstPlayer?.Name}");
+        
+        // ============================================
+        // CLEAR DEALER & BIDDER INFO - READ THIS!
+        // ============================================
+        Debug.LogWarning("╔════════════════════════════════════════════════════════╗");
+        Debug.LogWarning($"║ DEALER SETUP FOR ROUND {m_currentRound}");
+        Debug.LogWarning($"║ Dealer is: {Dealer?.Name}");
+        Debug.LogWarning($"║ First player to receive cards: {RoundFirstPlayer?.Name}");
+        Debug.LogWarning($"║ First bidder should be: {RoundFirstPlayer?.Name}");
+        Debug.LogWarning($"║ Player order: {m_players[0].Name}(0) → {m_players[1].Name}(1) → {m_players[2].Name}(2) → {m_players[3].Name}(3)");
+        Debug.LogWarning("╚════════════════════════════════════════════════════════╝");
+        // ============================================
+        
         m_biddingSystem.StartBidding(m_players, RoundFirstPlayer, faceUpCard);
         Debug.Log($"[GameStage] BiddingStartEvent should have been sent");
     }
