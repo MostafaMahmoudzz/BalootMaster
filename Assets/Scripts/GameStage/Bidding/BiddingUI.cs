@@ -248,20 +248,32 @@ public class BiddingUI : MonoBehaviour
     //----------------------------------------------
     void ShowBiddingUI()
     {
+        Debug.Log("[BiddingUI] ShowBiddingUI() called");
         m_showBiddingUI = true;
         if (biddingPanel != null)
         {
             biddingPanel.SetActive(true);
+            Debug.Log("[BiddingUI] BiddingPanel activated (SetActive(true))");
+        }
+        else
+        {
+            Debug.LogWarning("[BiddingUI] BiddingPanel is null! Cannot show UI.");
         }
     }
 
     //----------------------------------------------
     void HideBiddingUI()
     {
+        Debug.Log("[BiddingUI] HideBiddingUI() called");
         m_showBiddingUI = false;
         if (biddingPanel != null)
         {
             biddingPanel.SetActive(false);
+            Debug.Log("[BiddingUI] BiddingPanel deactivated (SetActive(false))");
+        }
+        else
+        {
+            Debug.LogWarning("[BiddingUI] BiddingPanel is null!");
         }
     }
 

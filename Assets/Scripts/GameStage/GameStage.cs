@@ -397,36 +397,33 @@ public class GameStage : Stage, IDeckOwner
     }
 
     //----------------------------------------------
-    void StartRound()
+    void StartRound(bool skipCardCollection = false)
     {
         m_currentRound++;                                          // Advance round index
         Debug.Log($"[GameStage] === STARTING ROUND {m_currentRound} ===");
-        Debug.Log($"[GameStage] StartRound() called - this should NOT happen after Trump confirmation!");
-        Debug.Log($"[GameStage] Stack trace:");
-        System.Diagnostics.StackTrace stackTrace = new System.Diagnostics.StackTrace();
-        for (int i = 1; i < Mathf.Min(stackTrace.FrameCount, 5); i++)
-        {
-            Debug.Log($"[GameStage]   {i}: {stackTrace.GetFrame(i).GetMethod().Name}");
-        }
 
-        // Only collect cards if this is not the first round (round 1)
-        // Now that we start from 0, the first round will be 1, so we collect cards for round 2+
-        if (m_currentRound > 1)
+        // Only collect cards if not skipped and not the first round
+        // skipCardCollection is true when called from OnBiddingComplete (no contract case)
+        // where cards are already collected before calling StartRound()
+        if (!skipCardCollection && m_currentRound > 1)
         {
-            Debug.Log($"[GameStage] Collecting cards for Round {m_currentRound} (not first round)");
-            Debug.Log($"[GameStage] This ensures all cards are returned to deck before new dealing");
+            Debug.Log($"[GameStage] Round {m_currentRound}: Collecting cards from previous round");
             // Collect all cards from players and return to deck
             CollectAllCardsToDeck();
         }
+        else if (skipCardCollection)
+        {
+            Debug.Log($"[GameStage] Round {m_currentRound}: Skipping collection (already done)");
+        }
         else
         {
-            Debug.Log($"[GameStage] Skipping card collection for Round {m_currentRound} (first round)");
+            Debug.Log($"[GameStage] Round {m_currentRound}: First round - no cards to collect");
         }
 
-        Debug.Log($"[GameStage] Dealing 3+2 cards to each player for Round {m_currentRound}");
-        DealCards();                                               // Distribute cards
+        Debug.Log($"[GameStage] Dealing cards to each player for Round {m_currentRound}");
+        DealCards();                                               // Distribute cards (rotates dealer)
 
-        // Reset bidding system for new round (already done in OnBiddingNoBids for no-contract case)
+        // Reset bidding system for new round
         m_biddingSystem.Reset();
         Debug.Log($"[GameStage] Starting Round {m_currentRound} - Bidding system reset");
 
@@ -590,7 +587,8 @@ public class GameStage : Stage, IDeckOwner
         Debug.Log($"[GameStage] Starting bidding round for Round {m_currentRound}");
         Debug.Log($"[GameStage] Deck size at start of bidding: {m_deck.Size}");
         
-        // Reset all players' bidding state
+        // Reset all players' bidding state (for normal rounds, not no-contract restart)
+        // Note: For no-contract case, players are already reset in OnBiddingComplete
         foreach (Player player in m_players)
         {
             player.ResetBidding();
@@ -621,15 +619,10 @@ public class GameStage : Stage, IDeckOwner
         FaceUpCard = faceUpCard;
         Debug.Log($"[GameStage] Revealed face-up card: {faceUpCard.Value} of {faceUpCard.Family}");
 
-        // Re-subscribe BiddingUI to bidding events before starting new bidding
-        Debug.Log("[GameStage] Re-subscribing BiddingUI to bidding events for new round");
-        BiddingEventSubscriptionEvent subscribeEvt = Pools.Claim<BiddingEventSubscriptionEvent>();
-        subscribeEvt.Subscribe = true;
-        GameEventDispatcher.SendEvent(subscribeEvt);
-
-        // Start bidding with the first player
+        // Start bidding with the first player (this sends BiddingStartEvent)
         Debug.Log($"[FIRST BIDDER DEBUG] Starting bidding with: {RoundFirstPlayer?.Name}");
         m_biddingSystem.StartBidding(m_players, RoundFirstPlayer, faceUpCard);
+        Debug.Log($"[GameStage] BiddingStartEvent should have been sent");
     }
 
     //----------------------------------------------
@@ -681,18 +674,18 @@ public class GameStage : Stage, IDeckOwner
         }
         else
         {
-            // Case C: All passed, no contract - start new round with new dealer
-            Debug.Log("[GameStage] === NO CONTRACT MADE - STARTING NEW ROUND ===");
-            Debug.Log("[GameStage] All players passed in bidding - starting new round with new dealer");
-            Debug.Log("[GameStage] IMPORTANT: No contract made - will NOT deal remaining cards, will collect all cards and restart");
+            // Case C: All passed, no contract - collect cards and start new round with new dealer
+            Debug.Log("[GameStage] === NO CONTRACT MADE - COLLECTING CARDS AND STARTING NEW ROUND ===");
+            Debug.Log("[GameStage] All players passed in both bidding rounds - no contract made");
+            Debug.Log("[GameStage] Will collect all cards and restart with next dealer");
             
-            // Debug: Check deck size before starting new round
-            Debug.Log($"[GameStage] Deck size before starting new round: {m_deck.Size}");
+            // Debug: Check deck size before collection
+            Debug.Log($"[GameStage] Deck size before collection: {m_deck.Size}");
             
-            // Debug: Check players' hands before starting new round
+            // Debug: Check players' hands before collection
             foreach (Player player in m_players)
             {
-                Debug.Log($"[GameStage] {player.Name} has {player.Hand.Size} cards before new round");
+                Debug.Log($"[GameStage] {player.Name} has {player.Hand.Size} cards before collection");
             }
             
             // Debug: Check face-up card
@@ -705,20 +698,32 @@ public class GameStage : Stage, IDeckOwner
                 Debug.Log($"[GameStage] No face-up card to collect");
             }
             
-            // IMPORTANT: Unsubscribe BiddingUI from all bidding events to prevent interference
-            Debug.Log("[GameStage] Unsubscribing BiddingUI from all bidding events to prevent interference");
+            // IMPORTANT: Collect all cards BEFORE starting new round
+            Debug.Log("[GameStage] Collecting all cards back to deck...");
+            CollectAllCardsToDeck();
+            Debug.Log($"[GameStage] All cards collected. Deck size: {m_deck.Size}");
             
-            // Send event to unsubscribe BiddingUI from bidding events
-            BiddingEventSubscriptionEvent unsubscribeEvt = Pools.Claim<BiddingEventSubscriptionEvent>();
-            unsubscribeEvt.Subscribe = false;
-            GameEventDispatcher.SendEvent(unsubscribeEvt);
+            // Send event to trigger visual card cleanup
+            Debug.Log("[GameStage] Sending CardsCollectedEvent to trigger visual cleanup");
+            CardsCollectedEvent cardsEvt = Pools.Claim<CardsCollectedEvent>();
+            GameEventDispatcher.SendEvent(cardsEvt);
+            
+            // Reset all players' bidding state
+            Debug.Log("[GameStage] Resetting all players' bidding state");
+            foreach (Player player in m_players)
+            {
+                player.ResetBidding();
+                Debug.Log($"[GameStage] Reset bidding for {player.Name}");
+            }
             
             // Reset bidding system to clean state
             Debug.Log("[GameStage] Resetting bidding system to clean state");
             m_biddingSystem.Reset();
             
-            StartRound();
-            Debug.Log("[GameStage] Started new round after no contract");
+            // Start new round with next dealer (skip card collection since already done)
+            Debug.Log("[GameStage] Starting new round with next dealer...");
+            StartRound(skipCardCollection: true);
+            Debug.Log("[GameStage] New round started after no contract");
         }
     }
 
