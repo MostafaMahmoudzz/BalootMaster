@@ -47,10 +47,19 @@ public class HumanPlayer : Player
 
     private void OnBiddingTurn(BiddingTurnEvent evt)
     {
-        if(evt.CurrentBidder == this)
+        // ⚠️ CRITICAL: ALWAYS read current bidder from system, NOT from event!
+        // Events may contain stale cached values
+        Player systemCurrentBidder = Stage?.BiddingSystem?.CurrentBidder;
+        
+        if(systemCurrentBidder == this)
         {
             // Human player's turn to bid - UI will handle this
             // The UI will call SubmitBid() when user makes a choice
+            Debug.Log($"[HumanPlayer] {this.Name} turn to bid (VERIFIED from system, not event)");
+        }
+        else
+        {
+            Debug.Log($"[HumanPlayer] {this.Name} received BiddingTurnEvent but system says current bidder is: {systemCurrentBidder?.Name}");
         }
     }
 

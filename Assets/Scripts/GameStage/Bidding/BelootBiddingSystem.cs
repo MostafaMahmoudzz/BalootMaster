@@ -266,12 +266,22 @@ public class BelootBiddingSystem
         // Check if current round has completed (all players bid)
         CheckBiddingComplete();
 
-        // Only move to next bidder if bidding is not complete
-        if (!m_biddingComplete)
+        // CRITICAL FIX: Check if round changed (e.g., Round 1 → Round 2)
+        bool roundChanged = (m_currentBiddingRound != biddingRoundBeforeCheck);
+        
+        if (roundChanged)
         {
-            // Move to next bidder (with safety check)
+            Debug.LogError($"[BIDDING SYSTEM] ⚠️ Round changed from {biddingRoundBeforeCheck} to {m_currentBiddingRound}");
+            Debug.LogError($"[BIDDING SYSTEM] ⚠️ NOT calling MoveToNextBidder because round changed!");
+            Debug.LogError($"[BIDDING SYSTEM] ⚠️ Current bidder should stay: {CurrentBidder?.Name}");
+            // DON'T move to next bidder when round changes - StartBiddingRound2 already set the correct bidder
+        }
+        else if (!m_biddingComplete)
+        {
+            // Same round, bidding not complete - move to next bidder
             if (m_biddingOrder.Count > 0)
             {
+                Debug.Log($"[BIDDING SYSTEM] Same round, moving to next bidder");
                 MoveToNextBidder();
             }
             else
@@ -411,6 +421,11 @@ public class BelootBiddingSystem
         evt.CurrentBidder = CurrentBidder;
         evt.HighestBid = m_highestBid;
         evt.Round = m_currentBiddingRound;
+        
+        // DEBUG: Verify event contains correct bidder
+        Debug.LogError($"[MOVE TO NEXT] ⚠️ SENDING BiddingTurnEvent with CurrentBidder = {evt.CurrentBidder?.Name}");
+        Debug.LogError($"[MOVE TO NEXT] ⚠️ m_currentBidderIndex = {m_currentBidderIndex}, bidder = {m_biddingOrder[m_currentBidderIndex]?.Name}");
+        
         GameEventDispatcher.SendEvent(evt);
     }
 
@@ -596,6 +611,12 @@ public class BelootBiddingSystem
         evt.CurrentBidder = CurrentBidder;
         evt.TrumpTaker = m_trumpTaker;
         evt.FaceUpCard = m_faceUpCard;
+        
+        // DEBUG: Verify event contains correct bidder
+        Debug.LogError($"[BIDDING SYSTEM] ⚠️ SENDING BiddingRound2StartEvent with CurrentBidder = {evt.CurrentBidder?.Name}");
+        Debug.LogError($"[BIDDING SYSTEM] ⚠️ System CurrentBidder property value = {CurrentBidder?.Name}");
+        Debug.LogError($"[BIDDING SYSTEM] ⚠️ m_currentBidderIndex = {m_currentBidderIndex}, bidder at that index = {m_biddingOrder[m_currentBidderIndex]?.Name}");
+        
         GameEventDispatcher.SendEvent(evt);
         
         // Don't send BiddingTurnEvent here - let the normal bidding flow continue

@@ -87,10 +87,16 @@ public class GameStageRenderer
                 string currentPlayerName = "Not Set";
                 string statusMessage = "";
                 
-                if (Stage.BiddingSystem != null && !Stage.BiddingSystem.IsComplete)
+                bool biddingActive = (Stage.BiddingSystem != null && !Stage.BiddingSystem.IsComplete);
+                
+                if (biddingActive)
                 {
-                    // During bidding, show current bidder
-                    currentPlayerName = Stage.BiddingSystem.CurrentBidder != null ? Stage.BiddingSystem.CurrentBidder.Name : "Not Set";
+                    // During bidding, show current bidder - ALWAYS read from system
+                    Player systemCurrentBidder = Stage.BiddingSystem.CurrentBidder;
+                    currentPlayerName = systemCurrentBidder != null ? systemCurrentBidder.Name : "Not Set";
+                    
+                    // CRITICAL DEBUG: Log EVERY call to see what's being read
+                    Debug.LogError($"[GameStageRenderer] ⚠️ OnGUI READING from system: CurrentBidder = {systemCurrentBidder?.Name}, will display: {currentPlayerName}");
                     
                     // Check if we're waiting for trump suit selection
                     if (Stage.BiddingSystem.WaitingForTrumpSuitSelection)
@@ -102,7 +108,6 @@ public class GameStageRenderer
                     {
                         statusMessage = "Bidding in Progress";
                     }
-                    
                 }
                 else if (Stage.CurrentPlayer != null)
                 {

@@ -59,13 +59,21 @@ public class AIPlayer : Player
     //--------------------------------------------------------------------
     private void OnBiddingTurn(BiddingTurnEvent evt)
     {
-        if(evt.CurrentBidder == this)
+        // ⚠️ CRITICAL: ALWAYS read current bidder from system, NOT from event!
+        // Events may contain stale cached values
+        Player systemCurrentBidder = Stage?.BiddingSystem?.CurrentBidder;
+        
+        if(systemCurrentBidder == this)
         {
             // AI's turn to bid - make a simple decision
-            Debug.Log($"[AIPlayer] {this.Name} is bidding in {evt.Round}");
+            Debug.Log($"[AIPlayer] {this.Name} is bidding in {evt.Round} (VERIFIED from system, not event)");
             Bid aiBid = MakeBidDecision(evt.HighestBid);
             Debug.Log($"[AIPlayer] {this.Name} decided to bid: {aiBid.ToString()}");
             SubmitBid(aiBid);
+        }
+        else
+        {
+            Debug.Log($"[AIPlayer] {this.Name} received BiddingTurnEvent but system says current bidder is: {systemCurrentBidder?.Name}");
         }
     }
 
