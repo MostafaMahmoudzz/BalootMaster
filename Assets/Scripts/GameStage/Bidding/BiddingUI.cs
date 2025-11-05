@@ -45,6 +45,11 @@ public class BiddingUI : MonoBehaviour
     public TMP_Text biddingInstructions; // Instructions text
     public TMP_Text faceUpCardText;    // Face-up card display
     public TMP_Text roundText;         // Current round display
+    
+    // Visual Marker for Current Bidder
+    [Header("Current Bidder Marker")]
+    [UnityEngine.Tooltip("Visual marker that shows which player is currently bidding (e.g., an arrow, icon, or highlight)")]
+    public GameObject currentBidderMarker;        // Visual marker for current bidder position
 
     //----------------------------------------------
     // Properties
@@ -84,6 +89,12 @@ public class BiddingUI : MonoBehaviour
 
         // Hide UI initially
         HideBiddingUI();
+        
+        // Hide marker initially
+        if (currentBidderMarker != null)
+        {
+            currentBidderMarker.SetActive(false);
+        }
     }
 
     //----------------------------------------------
@@ -93,6 +104,7 @@ public class BiddingUI : MonoBehaviour
         if (m_isBiddingActive && m_showBiddingUI)
         {
             RefreshCurrentBidderDisplay();
+            UpdateBidderMarker(); // Keep marker updated with current bidder
         }
     }
     
@@ -103,6 +115,7 @@ public class BiddingUI : MonoBehaviour
         if (m_isBiddingActive && m_showBiddingUI)
         {
             RefreshCurrentBidderDisplay();
+            UpdateBidderMarker(); // Keep marker updated with current bidder
         }
     }
 
@@ -173,6 +186,7 @@ public class BiddingUI : MonoBehaviour
         
         ShowBiddingUI();
         UpdateBiddingDisplay(evt.Round, evt.FaceUpCard);
+        UpdateBidderMarker(); // Update marker to show current bidder
     }
 
     //----------------------------------------------
@@ -232,6 +246,12 @@ public class BiddingUI : MonoBehaviour
     {
         m_isBiddingActive = false;
         HideBiddingUI();
+        
+        // Hide the marker when bidding is complete
+        if (currentBidderMarker != null)
+        {
+            currentBidderMarker.SetActive(false);
+        }
     }
 
     //----------------------------------------------
@@ -264,6 +284,7 @@ public class BiddingUI : MonoBehaviour
         }
         
         UpdateBiddingDisplay(evt.Round, null);
+        UpdateBidderMarker(); // Update marker to show current bidder
     }
 
     //----------------------------------------------
@@ -291,6 +312,7 @@ public class BiddingUI : MonoBehaviour
         
         ShowBiddingUI();
         UpdateBiddingDisplay(BelootBiddingSystem.BiddingRound.BiddingRound2, evt.FaceUpCard);
+        UpdateBidderMarker(); // Update marker to show current bidder
     }
 
     //----------------------------------------------
@@ -475,6 +497,82 @@ public class BiddingUI : MonoBehaviour
         {
             m_stage.SubmitBid(m_currentBidder, bid);
         }
+    }
+
+    //----------------------------------------------
+    // Update the marker position based on the current bidder
+    void UpdateBidderMarker()
+    {
+        if (currentBidderMarker == null)
+        {
+            // No marker assigned, skip
+            return;
+        }
+        
+        // Get the current bidder
+        Player currentBidder = m_stage?.BiddingSystem?.CurrentBidder;
+        
+        if (currentBidder == null)
+        {
+            // No current bidder, hide the marker
+            currentBidderMarker.SetActive(false);
+            return;
+        }
+        
+        // Show the marker
+        currentBidderMarker.SetActive(true);
+        
+        // Position the marker based on player position
+        Vector3 markerPosition = GetMarkerPositionForPlayer(currentBidder.Position);
+        currentBidderMarker.transform.position = markerPosition;
+        
+        Debug.Log($"[BiddingUI] Marker moved to {currentBidder.Position} position for {currentBidder.Name}");
+    }
+    
+    //----------------------------------------------
+    // Get the world position for the marker based on player position
+    Vector3 GetMarkerPositionForPlayer(PlayerPosition position)
+    {
+        // Get screen dimensions
+        float halfHeight = Camera.main.orthographicSize;
+        float halfWidth = halfHeight * Camera.main.aspect;
+        
+        Vector3 markerPos = Vector3.zero;
+        
+        // Position marker near each player's area
+        // These positions match the card dealing positions from GameStageRenderer
+        switch (position)
+        {
+            case PlayerPosition.South:
+                // Bottom center
+                markerPos.x = 0f;
+                markerPos.y = -0.65f * halfHeight;
+                markerPos.z = -1f; // Slightly in front for visibility
+                break;
+                
+            case PlayerPosition.West:
+                // Left side
+                markerPos.x = -0.75f * halfWidth;
+                markerPos.y = 0.5f * halfHeight;
+                markerPos.z = -1f;
+                break;
+                
+            case PlayerPosition.North:
+                // Top center
+                markerPos.x = 0f;
+                markerPos.y = 0.65f * halfHeight;
+                markerPos.z = -1f;
+                break;
+                
+            case PlayerPosition.East:
+                // Right side
+                markerPos.x = 0.75f * halfWidth;
+                markerPos.y = 0.5f * halfHeight;
+                markerPos.z = -1f;
+                break;
+        }
+        
+        return markerPos;
     }
 
     //----------------------------------------------
