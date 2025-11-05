@@ -29,17 +29,21 @@ This document describes the implementation of the doubles, triples, and quadrupl
 
 The bidding enters a new escalation phase where teams can increase the multiplier:
 
-1. **Start**: Opposing team gets first chance to double
+**Important**: The player who gets asked first is the **next player in turn order** after the trump confirmer (not just any opposing team player).
+
+1. **Start**: Next player in turn order gets first chance to double
    - **Pass**: Game starts with 1x multiplier
    - **Double**: Increase to 2x multiplier
 
-2. **If Doubled**: Trump confirmer can escalate
+2. **If Doubled**: Trump confirmer responds
    - **Pass**: Game starts with 2x multiplier
    - **Triple**: Increase to 3x multiplier
 
-3. **If Tripled**: Opposing team can escalate again
+3. **If Tripled**: Next player (same one who started) responds
    - **Pass**: Game starts with 3x multiplier
    - **Quadruple**: Increase to 4x multiplier (maximum)
+
+**Note**: Only these two specific players alternate during multiplier bidding - the next player in turn order and the trump confirmer.
 
 4. **If Quadrupled**: Game automatically starts with 4x multiplier
 
@@ -90,27 +94,29 @@ public enum BiddingRound
 - `m_inMultiplierBidding`: Flag indicating multiplier phase is active
 - `m_currentMultiplier`: Current multiplier value (1, 2, 3, or 4)
 - `m_trumpConfirmer`: Player who confirmed trump
+- `m_opposingBidder`: The specific player (next in turn order) who bids against trump confirmer
 - `m_lastMultiplierBidder`: Last player who escalated
-- `m_isOpposingTeamTurn`: Tracks which team's turn it is
+- `m_isOpposingTeamTurn`: Tracks which player's turn it is (opposing bidder vs trump confirmer)
 
 #### Key Methods
 
 ##### StartMultiplierBidding()
 - Called after Round 2 when trump is confirmed
 - Sets up the multiplier bidding phase
-- Identifies the opposing team
+- Identifies the **next player in turn order** after trump confirmer (not just any opposing team player)
+- Stores this player as `m_opposingBidder` who will alternate with `m_trumpConfirmer`
 - Sends `MultiplierBiddingStartEvent`
 
 ##### ProcessMultiplierBid()
 - Handles bid submissions during multiplier phase
 - Validates multiplier escalations
-- Enforces team turn order
-- Switches between teams after each escalation
+- Alternates between the two specific players: `m_opposingBidder` and `m_trumpConfirmer`
+- No other players participate in multiplier bidding
 - Sends `MultiplierBiddingTurnEvent`
 
 ##### GetOpposingTeamPlayer()
 - Helper method to find any player from opposing team
-- Used to determine the next bidder
+- Note: Not used in multiplier bidding anymore (kept for potential future use)
 
 ### 3. New Events
 **File**: `Assets/Scripts/GameStage/Bidding/BiddingEvents.cs`
@@ -146,23 +152,29 @@ Sent when turn changes during multiplier bidding
 ## Usage Example
 
 ### Scenario 1: No Escalation
-1. Round 2: Player A (Team 1) confirms Trump → **Immediately starts Multiplier Phase**
-2. Multiplier Phase: Player B (Team 2) passes
+**Turn order**: A → B → C → D
+1. Round 2: Player B (Team 1) confirms Trump → **Immediately starts Multiplier Phase**
+2. Multiplier Phase: Player A (next in turn order) passes
 3. Result: Game starts with 1x multiplier
 
 ### Scenario 2: Double Only
-1. Round 2: Player A (Team 1) confirms Trump → **Immediately starts Multiplier Phase**
-2. Multiplier Phase: Player B (Team 2) doubles (2x)
-3. Player A passes
-4. Result: Game starts with 2x multiplier
+**Turn order**: A → B → C → D
+1. Round 2: Player B (Team 1) confirms Trump → **Immediately starts Multiplier Phase**
+2. Multiplier Phase:
+   - Player A (next in turn order) doubles (2x)
+   - Player B passes
+3. Result: Game starts with 2x multiplier
 
 ### Scenario 3: Full Escalation
-1. Round 2: Player A (Team 1) confirms Trump → **Immediately starts Multiplier Phase**
-2. Multiplier Phase:
-   - Player B (Team 2) doubles (2x)
-   - Player A triples (3x)
-   - Player B quadruples (4x)
+**Turn order**: A → B → C → D
+1. Round 2: Player B (Team 1) confirms Trump → **Immediately starts Multiplier Phase**
+2. Multiplier Phase (only Players A and B participate):
+   - Player A (next in turn order) doubles (2x)
+   - Player B (trump confirmer) triples (3x)
+   - Player A quadruples (4x) ← same player who started
 3. Result: Game starts with 4x multiplier
+
+**Note**: Players C and D don't participate in multiplier bidding - only the next player in turn order (A) and the trump confirmer (B).
 
 ### Scenario 4: Sun Declared
 1. Round 2: Player A chooses Sun
@@ -226,10 +238,11 @@ if (biddingSystem.InMultiplierBidding)
 
 ### Design Decisions
 
-1. **Team-Based**: Only one player per team needs to bid (automatic delegation)
-2. **Alternating**: Teams alternate after each escalation
-3. **Maximum**: 4x is the maximum multiplier (quadruple)
-4. **Exclusive**: Only applies when trump is confirmed (not Sun or Another Trump)
+1. **Two-Player System**: Only two specific players participate - the next player in turn order after trump confirmer, and the trump confirmer themselves
+2. **Turn Order Based**: The first player is determined by normal turn order (not random team member)
+3. **Alternating**: These two players alternate after each escalation
+4. **Maximum**: 4x is the maximum multiplier (quadruple)
+5. **Exclusive**: Only applies when trump is confirmed (not Sun or Another Trump)
 
 ### Future Enhancements
 

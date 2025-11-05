@@ -48,6 +48,7 @@ public class BelootBiddingSystem
     private bool m_inMultiplierBidding;            // Are we in the multiplier escalation phase?
     private int m_currentMultiplier;               // Current multiplier (1, 2, 3, or 4)
     private Player m_trumpConfirmer;               // Player who confirmed trump (and can escalate when opposing team doubles)
+    private Player m_opposingBidder;               // The specific opposing player who bids in multiplier phase
     private Player m_lastMultiplierBidder;         // Last player who escalated the multiplier
     private bool m_isOpposingTeamTurn;             // Is it the opposing team's turn to bid?
 
@@ -154,6 +155,7 @@ public class BelootBiddingSystem
         m_inMultiplierBidding = false;
         m_currentMultiplier = 1;
         m_trumpConfirmer = null;
+        m_opposingBidder = null;
         m_lastMultiplierBidder = null;
         m_isOpposingTeamTurn = false;
     }
@@ -209,6 +211,7 @@ public class BelootBiddingSystem
         m_inMultiplierBidding = false;
         m_currentMultiplier = 1;
         m_trumpConfirmer = null;
+        m_opposingBidder = null;
         m_lastMultiplierBidder = null;
         m_isOpposingTeamTurn = false;
 
@@ -770,6 +773,7 @@ public class BelootBiddingSystem
         m_inMultiplierBidding = false;
         m_currentMultiplier = 1;
         m_trumpConfirmer = null;
+        m_opposingBidder = null;
         m_lastMultiplierBidder = null;
         m_isOpposingTeamTurn = false;
         
@@ -791,21 +795,25 @@ public class BelootBiddingSystem
         m_trumpConfirmer = m_winningBidder; // The player who confirmed trump
         m_isOpposingTeamTurn = true; // Opposing team goes first
         
-        // Find a player from the opposing team to bid
-        Player opposingPlayer = GetOpposingTeamPlayer(m_trumpConfirmer);
-        if (opposingPlayer != null)
+        // Find the next player in turn order after the trump confirmer
+        // This is the player whose turn it would be next in normal bidding order
+        int trumpConfirmerIndex = m_biddingOrder.IndexOf(m_trumpConfirmer);
+        if (trumpConfirmerIndex == -1)
         {
-            m_currentBidderIndex = m_biddingOrder.IndexOf(opposingPlayer);
-            Debug.Log($"[BiddingSystem] Multiplier bidding starts with opposing team player: {opposingPlayer.Name}");
-        }
-        else
-        {
-            Debug.LogError("[BiddingSystem] Could not find opposing team player for multiplier bidding!");
+            Debug.LogError("[BiddingSystem] Could not find trump confirmer in bidding order!");
             // Fallback: end bidding immediately
             m_biddingComplete = true;
             FinalizeBidding();
             return;
         }
+        
+        // Move to next player (counter-clockwise, so we subtract 1)
+        m_currentBidderIndex = (trumpConfirmerIndex - 1 + m_biddingOrder.Count) % m_biddingOrder.Count;
+        m_opposingBidder = CurrentBidder; // Store this player - they will alternate with trump confirmer
+        
+        Debug.Log($"[BiddingSystem] Multiplier bidding starts with next player in turn order: {m_opposingBidder?.Name}");
+        Debug.Log($"[BiddingSystem] Trump confirmer: {m_trumpConfirmer.Name}, Opposing bidder: {m_opposingBidder?.Name}");
+        Debug.Log($"[BiddingSystem] These two players will alternate during multiplier bidding");
         
         // Send multiplier bidding start event
         MultiplierBiddingStartEvent evt = Pools.Claim<MultiplierBiddingStartEvent>();
@@ -899,14 +907,13 @@ public class BelootBiddingSystem
             // Switch to the other team's turn
             m_isOpposingTeamTurn = !m_isOpposingTeamTurn;
             
-            // Set the next bidder
-            Player nextBidder = m_isOpposingTeamTurn ? 
-                GetOpposingTeamPlayer(m_trumpConfirmer) : m_trumpConfirmer;
+            // Alternate between the two specific players: opposing bidder and trump confirmer
+            Player nextBidder = m_isOpposingTeamTurn ? m_opposingBidder : m_trumpConfirmer;
             
             if (nextBidder != null)
             {
                 m_currentBidderIndex = m_biddingOrder.IndexOf(nextBidder);
-                Debug.Log($"[BiddingSystem] Next bidder: {nextBidder.Name} (opposing team turn: {m_isOpposingTeamTurn})");
+                Debug.Log($"[BiddingSystem] Next bidder: {nextBidder.Name} (is opposing bidder: {m_isOpposingTeamTurn})");
                 
                 // Send turn event
                 MultiplierBiddingTurnEvent evt = Pools.Claim<MultiplierBiddingTurnEvent>();
