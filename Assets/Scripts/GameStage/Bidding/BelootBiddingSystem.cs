@@ -22,7 +22,8 @@ public class BelootBiddingSystem
     public enum BiddingRound
     {
         BiddingRound1,     // First round of bidding
-        BiddingRound2       // Second round of bidding
+        BiddingRound2,      // Second round of bidding
+        MultiplierBidding   // Multiplier escalation phase (doubles/triples/quadruples)
     }
 
     //----------------------------------------------
@@ -42,6 +43,13 @@ public class BelootBiddingSystem
     private bool m_anotherTrumpChosen;             // Whether "Another Trump" was chosen in Round 2
     private bool m_trumpConfirmed;                 // Whether Trump was confirmed in Round 2 (face-up suit chosen)
     private bool m_waitingForTrumpSuitSelection;   // Whether we're waiting for trump suit selection after "Another Trump"
+    
+    // Multiplier bidding variables
+    private bool m_inMultiplierBidding;            // Are we in the multiplier escalation phase?
+    private int m_currentMultiplier;               // Current multiplier (1, 2, 3, or 4)
+    private Player m_trumpConfirmer;               // Player who confirmed trump (and can escalate when opposing team doubles)
+    private Player m_lastMultiplierBidder;         // Last player who escalated the multiplier
+    private bool m_isOpposingTeamTurn;             // Is it the opposing team's turn to bid?
 
     //----------------------------------------------
     // Properties
@@ -109,6 +117,21 @@ public class BelootBiddingSystem
         get { return m_waitingForTrumpSuitSelection; }
     }
 
+    public bool InMultiplierBidding
+    {
+        get { return m_inMultiplierBidding; }
+    }
+
+    public int CurrentMultiplier
+    {
+        get { return m_currentMultiplier; }
+    }
+
+    public Player TrumpConfirmer
+    {
+        get { return m_trumpConfirmer; }
+    }
+
     //----------------------------------------------
     // Methods
     public BelootBiddingSystem()
@@ -128,6 +151,11 @@ public class BelootBiddingSystem
         m_anotherTrumpChosen = false;
         m_trumpConfirmed = false;
         m_waitingForTrumpSuitSelection = false;
+        m_inMultiplierBidding = false;
+        m_currentMultiplier = 1;
+        m_trumpConfirmer = null;
+        m_lastMultiplierBidder = null;
+        m_isOpposingTeamTurn = false;
     }
 
     //-------------------------------------------------------
@@ -178,6 +206,11 @@ public class BelootBiddingSystem
         m_anotherTrumpChosen = false;
         m_trumpConfirmed = false;
         m_waitingForTrumpSuitSelection = false;
+        m_inMultiplierBidding = false;
+        m_currentMultiplier = 1;
+        m_trumpConfirmer = null;
+        m_lastMultiplierBidder = null;
+        m_isOpposingTeamTurn = false;
 
         // Send bidding start event
         BiddingStartEvent evt = Pools.Claim<BiddingStartEvent>();
@@ -213,6 +246,12 @@ public class BelootBiddingSystem
             return false;
         }
 
+        // Handle multiplier bidding separately
+        if (m_inMultiplierBidding)
+        {
+            return ProcessMultiplierBid(player, bid);
+        }
+
         // Validate bid based on current round and rules
         if (!IsValidBid(bid))
         {
@@ -231,6 +270,15 @@ public class BelootBiddingSystem
             m_winningBidder = player;
             m_highestBid = bid;
             FinalizeBidding();
+            return true;
+        }
+
+        // Check if Trump was confirmed in Round 2 (immediate transition to multiplier bidding)
+        if (m_currentBiddingRound == BiddingRound.MultiplierBidding)
+        {
+            // Trump was confirmed and multiplier bidding has started
+            // ProcessBid already handled the transition, just return
+            Debug.Log($"[BiddingSystem] Trump confirmed, multiplier bidding started - exiting SubmitBid");
             return true;
         }
 
@@ -372,8 +420,16 @@ public class BelootBiddingSystem
                 if (m_trumpTaker != null && bid.Suit == m_faceUpCard.Family)
                 {
                     // Round 2, Case A: Trump taker confirms Trump (face-up suit)
+                    // Start multiplier bidding IMMEDIATELY (don't wait for other players)
                     m_trumpConfirmed = true;
-                    Debug.Log($"[BiddingSystem] {player.Name} confirmed Trump ({bid.Suit}) in Round 2 - contract will be finalized after Round 2 completes");
+                    Debug.Log($"[BiddingSystem] {player.Name} confirmed Trump ({bid.Suit}) in Round 2 - starting multiplier bidding immediately");
+                    
+                    // Mark player as having bid
+                    player.HasBid = true;
+                    
+                    // Start multiplier bidding phase immediately
+                    StartMultiplierBidding();
+                    return; // Exit early, don't check bidding complete
                 }
                 else if (m_trumpTaker == null && bid.Suit != m_faceUpCard.Family)
                 {
@@ -400,7 +456,7 @@ public class BelootBiddingSystem
             }
         }
 
-        // Check if bidding is complete (only if Sun didn't end it immediately)
+        // Check if bidding is complete (only if Sun or Trump Confirm didn't end it immediately)
         CheckBiddingComplete();
     }
 
@@ -527,12 +583,9 @@ public class BelootBiddingSystem
                     Debug.Log("[BiddingSystem] Round 2 completed with actual bids - checking contract type...");
                     if (m_trumpConfirmed)
                     {
-                        // Trump was confirmed - finalize the Trump contract
-                        Debug.Log("[BiddingSystem] Round 2 complete with Trump confirmed - finalizing Trump contract");
-                        Debug.Log("[BiddingSystem] About to call FinalizeBidding() for Trump contract");
-                        m_biddingComplete = true;
-                        FinalizeBidding();
-                        Debug.Log("[BiddingSystem] FinalizeBidding() completed for Trump contract");
+                        // Trump was confirmed - start multiplier bidding phase
+                        Debug.Log("[BiddingSystem] Round 2 complete with Trump confirmed - starting multiplier bidding phase");
+                        StartMultiplierBidding();
                     }
                     else if (m_sunDeclared)
                     {
@@ -714,7 +767,167 @@ public class BelootBiddingSystem
         m_anotherTrumpChosen = false;
         m_trumpConfirmed = false;
         m_waitingForTrumpSuitSelection = false;
+        m_inMultiplierBidding = false;
+        m_currentMultiplier = 1;
+        m_trumpConfirmer = null;
+        m_lastMultiplierBidder = null;
+        m_isOpposingTeamTurn = false;
         
         Debug.Log("[BiddingSystem] Bidding system reset complete");
+    }
+
+    //-------------------------------------------------------
+    // StartMultiplierBidding
+    //-------------------------------------------------------
+    // Called after Round 2 when trump is confirmed to start the 
+    // doubles/triples/quadruples escalation phase
+    private void StartMultiplierBidding()
+    {
+        Debug.Log("[BiddingSystem] Starting multiplier bidding phase");
+        
+        m_currentBiddingRound = BiddingRound.MultiplierBidding;
+        m_inMultiplierBidding = true;
+        m_currentMultiplier = 1;
+        m_trumpConfirmer = m_winningBidder; // The player who confirmed trump
+        m_isOpposingTeamTurn = true; // Opposing team goes first
+        
+        // Find a player from the opposing team to bid
+        Player opposingPlayer = GetOpposingTeamPlayer(m_trumpConfirmer);
+        if (opposingPlayer != null)
+        {
+            m_currentBidderIndex = m_biddingOrder.IndexOf(opposingPlayer);
+            Debug.Log($"[BiddingSystem] Multiplier bidding starts with opposing team player: {opposingPlayer.Name}");
+        }
+        else
+        {
+            Debug.LogError("[BiddingSystem] Could not find opposing team player for multiplier bidding!");
+            // Fallback: end bidding immediately
+            m_biddingComplete = true;
+            FinalizeBidding();
+            return;
+        }
+        
+        // Send multiplier bidding start event
+        MultiplierBiddingStartEvent evt = Pools.Claim<MultiplierBiddingStartEvent>();
+        evt.CurrentBidder = CurrentBidder;
+        evt.TrumpConfirmer = m_trumpConfirmer;
+        evt.CurrentMultiplier = m_currentMultiplier;
+        evt.IsOpposingTeamTurn = m_isOpposingTeamTurn;
+        GameEventDispatcher.SendEvent(evt);
+    }
+
+    //-------------------------------------------------------
+    // GetOpposingTeamPlayer
+    //-------------------------------------------------------
+    // Returns any player from the team opposing the given player
+    private Player GetOpposingTeamPlayer(Player player)
+    {
+        if (player == null) return null;
+        
+        PlayerTeam opposingTeam = (player.Team == PlayerTeam.Team1) ? PlayerTeam.Team2 : PlayerTeam.Team1;
+        
+        foreach (Player p in m_biddingOrder)
+        {
+            if (p.Team == opposingTeam)
+            {
+                return p;
+            }
+        }
+        
+        return null;
+    }
+
+    //-------------------------------------------------------
+    // ProcessMultiplierBid
+    //-------------------------------------------------------
+    // Handles bids during the multiplier escalation phase
+    private bool ProcessMultiplierBid(Player player, Bid bid)
+    {
+        Debug.Log($"[BiddingSystem] ProcessMultiplierBid: {player.Name} bid {bid.DisplayName}");
+        
+        // Validate the bid
+        if (bid.IsPass)
+        {
+            // Player passed, end multiplier bidding with current multiplier
+            Debug.Log($"[BiddingSystem] {player.Name} passed - ending multiplier bidding at {m_currentMultiplier}x");
+            m_highestBid.Multiplier = m_currentMultiplier;
+            m_biddingComplete = true;
+            FinalizeBidding();
+            return true;
+        }
+        else if (bid.IsMultiplier)
+        {
+            // Player escalated the multiplier
+            int newMultiplier = bid.Multiplier;
+            
+            // Validate multiplier escalation
+            if (newMultiplier != m_currentMultiplier + 1)
+            {
+                Debug.LogWarning($"[BiddingSystem] Invalid multiplier escalation: {m_currentMultiplier} -> {newMultiplier}");
+                return false;
+            }
+            
+            if (newMultiplier > 4)
+            {
+                Debug.LogWarning($"[BiddingSystem] Multiplier cannot exceed 4");
+                return false;
+            }
+            
+            // Validate team turn
+            bool playerIsOpposingTeam = (player.Team != m_trumpConfirmer.Team);
+            if (playerIsOpposingTeam != m_isOpposingTeamTurn)
+            {
+                Debug.LogWarning($"[BiddingSystem] Wrong team's turn! Expected opposing={m_isOpposingTeamTurn}, got opposing={playerIsOpposingTeam}");
+                return false;
+            }
+            
+            // Accept the escalation
+            m_currentMultiplier = newMultiplier;
+            m_lastMultiplierBidder = player;
+            Debug.Log($"[BiddingSystem] {player.Name} escalated to {m_currentMultiplier}x");
+            
+            // Check if we've reached the maximum (quadruple)
+            if (m_currentMultiplier >= 4)
+            {
+                Debug.Log($"[BiddingSystem] Reached maximum multiplier (4x) - ending bidding");
+                m_highestBid.Multiplier = m_currentMultiplier;
+                m_biddingComplete = true;
+                FinalizeBidding();
+                return true;
+            }
+            
+            // Switch to the other team's turn
+            m_isOpposingTeamTurn = !m_isOpposingTeamTurn;
+            
+            // Set the next bidder
+            Player nextBidder = m_isOpposingTeamTurn ? 
+                GetOpposingTeamPlayer(m_trumpConfirmer) : m_trumpConfirmer;
+            
+            if (nextBidder != null)
+            {
+                m_currentBidderIndex = m_biddingOrder.IndexOf(nextBidder);
+                Debug.Log($"[BiddingSystem] Next bidder: {nextBidder.Name} (opposing team turn: {m_isOpposingTeamTurn})");
+                
+                // Send turn event
+                MultiplierBiddingTurnEvent evt = Pools.Claim<MultiplierBiddingTurnEvent>();
+                evt.CurrentBidder = CurrentBidder;
+                evt.CurrentMultiplier = m_currentMultiplier;
+                evt.IsOpposingTeamTurn = m_isOpposingTeamTurn;
+                GameEventDispatcher.SendEvent(evt);
+            }
+            else
+            {
+                Debug.LogError("[BiddingSystem] Could not find next bidder for multiplier bidding!");
+                m_biddingComplete = true;
+                FinalizeBidding();
+            }
+            
+            return true;
+        }
+        else
+        {
+            Debug.LogWarning($"[BiddingSystem] Invalid bid during multiplier phase: {bid.DisplayName}");
+            return false;
+        }
     }
 }

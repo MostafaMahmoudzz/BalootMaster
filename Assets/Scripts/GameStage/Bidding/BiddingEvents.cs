@@ -133,3 +133,39 @@ public class BiddingNoBidsEvent : PooledEvent
         BothRoundsNoBids = false;
     }
 }
+
+//-------------------------------------------------------
+// MultiplierBiddingStartEvent
+//-------------------------------------------------------
+public class MultiplierBiddingStartEvent : PooledEvent
+{
+    public Player CurrentBidder { get; set; }
+    public Player TrumpConfirmer { get; set; }
+    public int CurrentMultiplier { get; set; } // 1, 2, 3, or 4
+    public bool IsOpposingTeamTurn { get; set; } // true if opposing team can escalate
+
+    public override void Reset()
+    {
+        CurrentBidder = null;
+        TrumpConfirmer = null;
+        CurrentMultiplier = 1;
+        IsOpposingTeamTurn = false;
+    }
+}
+
+//-------------------------------------------------------
+// MultiplierBiddingTurnEvent
+//-------------------------------------------------------
+public class MultiplierBiddingTurnEvent : PooledEvent
+{
+    public Player CurrentBidder { get; set; }
+    public int CurrentMultiplier { get; set; }
+    public bool IsOpposingTeamTurn { get; set; }
+
+    public override void Reset()
+    {
+        CurrentBidder = null;
+        CurrentMultiplier = 1;
+        IsOpposingTeamTurn = false;
+    }
+}

@@ -45,6 +45,10 @@ public class BiddingUI : MonoBehaviour
     private bool m_trumpChosen;                   // Track if someone chose "Trump" in Round 1
     private bool m_ignoreBiddingTurnEvents;       // Flag to ignore BiddingTurnEvent during transitions
     private bool m_preventBidSubmission;          // Flag to prevent bid submission during transitions
+    private bool m_inMultiplierBidding;           // Are we in multiplier bidding phase?
+    private int m_currentMultiplier;              // Current multiplier (1, 2, 3, or 4)
+    private Player m_trumpConfirmer;              // Player who confirmed trump
+    private bool m_isOpposingTeamTurn;            // Is it the opposing team's turn?
     
     // UI Elements (these would be assigned in Unity Inspector)
     public GameObject biddingPanel;               // Main bidding panel
@@ -97,6 +101,8 @@ public class BiddingUI : MonoBehaviour
         GameEventDispatcher.Subscribe<BiddingRound2StartEvent>(this.OnBiddingRound2Start);
         GameEventDispatcher.Subscribe<BiddingTurnEventIgnoreEvent>(this.OnBiddingTurnEventIgnore);
         GameEventDispatcher.Subscribe<BiddingEventSubscriptionEvent>(this.OnBiddingEventSubscription);
+        GameEventDispatcher.Subscribe<MultiplierBiddingStartEvent>(this.OnMultiplierBiddingStart);
+        GameEventDispatcher.Subscribe<MultiplierBiddingTurnEvent>(this.OnMultiplierBiddingTurn);
 
         // Setup button listeners
         SetupButtonListeners();
@@ -143,6 +149,8 @@ public class BiddingUI : MonoBehaviour
         GameEventDispatcher.UnSubscribe<BiddingRound2StartEvent>(this.OnBiddingRound2Start);
         GameEventDispatcher.UnSubscribe<BiddingTurnEventIgnoreEvent>(this.OnBiddingTurnEventIgnore);
         GameEventDispatcher.UnSubscribe<BiddingEventSubscriptionEvent>(this.OnBiddingEventSubscription);
+        GameEventDispatcher.UnSubscribe<MultiplierBiddingStartEvent>(this.OnMultiplierBiddingStart);
+        GameEventDispatcher.UnSubscribe<MultiplierBiddingTurnEvent>(this.OnMultiplierBiddingTurn);
     }
 
     //----------------------------------------------
@@ -221,6 +229,8 @@ public class BiddingUI : MonoBehaviour
         GameEventDispatcher.UnSubscribe<BidSubmittedEvent>(this.OnBidSubmitted);
         GameEventDispatcher.UnSubscribe<BiddingRound2StartEvent>(this.OnBiddingRound2Start);
         GameEventDispatcher.UnSubscribe<BiddingTurnEventIgnoreEvent>(this.OnBiddingTurnEventIgnore);
+        GameEventDispatcher.UnSubscribe<MultiplierBiddingStartEvent>(this.OnMultiplierBiddingStart);
+        GameEventDispatcher.UnSubscribe<MultiplierBiddingTurnEvent>(this.OnMultiplierBiddingTurn);
         // Note: We keep subscribed to BiddingEventSubscriptionEvent to allow re-subscription
     }
 
@@ -234,6 +244,8 @@ public class BiddingUI : MonoBehaviour
         GameEventDispatcher.Subscribe<BidSubmittedEvent>(this.OnBidSubmitted);
         GameEventDispatcher.Subscribe<BiddingRound2StartEvent>(this.OnBiddingRound2Start);
         GameEventDispatcher.Subscribe<BiddingTurnEventIgnoreEvent>(this.OnBiddingTurnEventIgnore);
+        GameEventDispatcher.Subscribe<MultiplierBiddingStartEvent>(this.OnMultiplierBiddingStart);
+        GameEventDispatcher.Subscribe<MultiplierBiddingTurnEvent>(this.OnMultiplierBiddingTurn);
     }
 
     //----------------------------------------------
@@ -342,6 +354,35 @@ public class BiddingUI : MonoBehaviour
     }
 
     //----------------------------------------------
+    void OnMultiplierBiddingStart(MultiplierBiddingStartEvent evt)
+    {
+        Debug.Log($"[BiddingUI] OnMultiplierBiddingStart - CurrentBidder: {evt.CurrentBidder?.Name}, Multiplier: {evt.CurrentMultiplier}");
+        
+        m_inMultiplierBidding = true;
+        m_currentMultiplier = evt.CurrentMultiplier;
+        m_trumpConfirmer = evt.TrumpConfirmer;
+        m_isOpposingTeamTurn = evt.IsOpposingTeamTurn;
+        m_currentBidder = evt.CurrentBidder;
+        m_currentBiddingRound = BelootBiddingSystem.BiddingRound.MultiplierBidding;
+        
+        UpdateBiddingDisplay(m_currentBiddingRound, m_faceUpCard);
+        UpdateBidderMarker();
+    }
+
+    //----------------------------------------------
+    void OnMultiplierBiddingTurn(MultiplierBiddingTurnEvent evt)
+    {
+        Debug.Log($"[BiddingUI] OnMultiplierBiddingTurn - CurrentBidder: {evt.CurrentBidder?.Name}, Multiplier: {evt.CurrentMultiplier}");
+        
+        m_currentMultiplier = evt.CurrentMultiplier;
+        m_isOpposingTeamTurn = evt.IsOpposingTeamTurn;
+        m_currentBidder = evt.CurrentBidder;
+        
+        UpdateBiddingDisplay(m_currentBiddingRound, m_faceUpCard);
+        UpdateBidderMarker();
+    }
+
+    //----------------------------------------------
     void ShowBiddingUI()
     {
         Debug.Log("[BiddingUI] ShowBiddingUI() called");
@@ -408,12 +449,16 @@ public class BiddingUI : MonoBehaviour
         }
 
         // Debug: show current bidding round in console
-        Debug.Log($"[BiddingUI] Current Bidding Round: {(m_currentBiddingRound == BelootBiddingSystem.BiddingRound.BiddingRound1 ? "1" : "2")}");
+        string roundName = m_currentBiddingRound == BelootBiddingSystem.BiddingRound.BiddingRound1 ? "1" : 
+                          m_currentBiddingRound == BelootBiddingSystem.BiddingRound.BiddingRound2 ? "2" : "Multiplier";
+        Debug.Log($"[BiddingUI] Current Bidding Round: {roundName}");
 
         // Update round text
         if (roundText != null)
         {
-            roundText.text = $"Round: {(biddingRound == BelootBiddingSystem.BiddingRound.BiddingRound1 ? "1" : "2")}";
+            string roundDisplayText = biddingRound == BelootBiddingSystem.BiddingRound.BiddingRound1 ? "1" : 
+                                     biddingRound == BelootBiddingSystem.BiddingRound.BiddingRound2 ? "2" : "Multiplier";
+            roundText.text = $"Round: {roundDisplayText}";
         }
 
         // Update face-up card text
@@ -613,7 +658,8 @@ public class BiddingUI : MonoBehaviour
             BelootBiddingSystem systemBidding = m_stage.BiddingSystem;
             
             // Debug: Show current round
-            string biddingRoundText = m_currentBiddingRound == BelootBiddingSystem.BiddingRound.BiddingRound1 ? "Round 1" : "Round 2";
+            string biddingRoundText = m_currentBiddingRound == BelootBiddingSystem.BiddingRound.BiddingRound1 ? "Round 1" : 
+                                     m_currentBiddingRound == BelootBiddingSystem.BiddingRound.BiddingRound2 ? "Round 2" : "Multiplier Bidding";
             GUI.Label(new Rect(20, 20, 280, 20), $"Current Round: {biddingRoundText}");
             
             // ALWAYS use the ACTUAL system value, not cached UI value
@@ -659,6 +705,13 @@ public class BiddingUI : MonoBehaviour
             else if (systemBidding != null && systemBidding.WaitingForTrumpSuitSelection)
             {
                 Debug.Log($"[BiddingUI] Waiting for trump suit selection but winning bidder is not human: {systemBidding.WinningBidder?.Name}");
+            }
+            
+            // Check if we're in multiplier bidding phase
+            if (m_inMultiplierBidding && systemCurrentBidder is HumanPlayer)
+            {
+                ShowMultiplierBiddingOptions(systemCurrentBidder);
+                return;
             }
             
             // CRITICAL: Use system current bidder, not cached value
@@ -837,6 +890,86 @@ public class BiddingUI : MonoBehaviour
         if (m_faceUpCard != null)
         {
             GUI.Label(new Rect(20, 160, 280, 20), $"Face-up card: {m_faceUpCard.Value} of {m_faceUpCard.Family} (cannot be trump)");
+        }
+    }
+
+    //----------------------------------------------
+    // ShowMultiplierBiddingOptions
+    //----------------------------------------------
+    // Show UI for multiplier bidding (doubles/triples/quadruples)
+    private void ShowMultiplierBiddingOptions(Player currentBidder)
+    {
+        GUI.Label(new Rect(20, 80, 280, 20), "Multiplier Bidding:");
+        
+        // Show current multiplier status
+        string multiplierText = m_currentMultiplier == 1 ? "Normal (1x)" : 
+                               m_currentMultiplier == 2 ? "Double (2x)" : 
+                               m_currentMultiplier == 3 ? "Triple (3x)" : "Quadruple (4x)";
+        GUI.Label(new Rect(20, 100, 280, 20), $"Current: {multiplierText}");
+        
+        // Show trump confirmer info
+        if (m_trumpConfirmer != null)
+        {
+            GUI.Label(new Rect(20, 120, 280, 20), $"Trump Confirmer: {m_trumpConfirmer.Name}");
+        }
+        
+        // Determine what options to show
+        bool isOpposingTeam = (currentBidder.Team != m_trumpConfirmer.Team);
+        
+        if (isOpposingTeam != m_isOpposingTeamTurn)
+        {
+            // Not this player's turn (wrong team)
+            GUI.Label(new Rect(20, 140, 280, 20), "Waiting for other team...");
+            return;
+        }
+        
+        GUI.Label(new Rect(20, 140, 280, 20), "Choose your action:");
+        
+        // Pass button (always available)
+        if (GUI.Button(new Rect(20, 160, 80, 30), "Pass"))
+        {
+            SubmitBid(Bid.CreatePass());
+        }
+        
+        // Escalation button (if not at maximum)
+        if (m_currentMultiplier < 4)
+        {
+            string escalateButtonText = "";
+            Bid escalateBid = null;
+            
+            switch (m_currentMultiplier)
+            {
+                case 1:
+                    escalateButtonText = "Double (2x)";
+                    escalateBid = Bid.CreateDouble();
+                    break;
+                case 2:
+                    escalateButtonText = "Triple (3x)";
+                    escalateBid = Bid.CreateTriple();
+                    break;
+                case 3:
+                    escalateButtonText = "Quadruple (4x)";
+                    escalateBid = Bid.CreateQuadruple();
+                    break;
+            }
+            
+            if (escalateBid != null && GUI.Button(new Rect(110, 160, 120, 30), escalateButtonText))
+            {
+                SubmitBid(escalateBid);
+            }
+        }
+        
+        // Show explanation
+        string teamRole = isOpposingTeam ? "(Opposing Team)" : "(Trump Confirmer Team)";
+        GUI.Label(new Rect(20, 200, 340, 20), $"You are {teamRole}");
+        
+        if (isOpposingTeam)
+        {
+            GUI.Label(new Rect(20, 220, 340, 20), "You can escalate or pass to end bidding");
+        }
+        else
+        {
+            GUI.Label(new Rect(20, 220, 340, 20), "You can escalate or pass to end bidding");
         }
     }
 }

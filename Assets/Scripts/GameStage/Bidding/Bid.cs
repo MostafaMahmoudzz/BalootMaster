@@ -23,7 +23,10 @@ public class Bid
     {
         Pass,           // Player passes
         Trump,          // Player chooses trump suit
-        Sun             // No trump (Sun contract)
+        Sun,            // No trump (Sun contract)
+        Double,         // 2x multiplier
+        Triple,         // 3x multiplier
+        Quadruple       // 4x multiplier
     }
 
     //----------------------------------------------
@@ -31,6 +34,7 @@ public class Bid
     public ContractType Type { get; set; }          // Type of contract
     public Card32Family Suit { get; set; }         // Trump suit being bid on (if Trump)
     public int BidValue { get; set; }              // Bid value (for future scoring)
+    public int Multiplier { get; set; }            // Score multiplier (1 = normal, 2 = double, 3 = triple, 4 = quadruple)
 
     //----------------------------------------------
     // Properties
@@ -49,6 +53,26 @@ public class Bid
         get { return Type == ContractType.Sun; }
     }
 
+    public bool IsDouble
+    {
+        get { return Type == ContractType.Double; }
+    }
+
+    public bool IsTriple
+    {
+        get { return Type == ContractType.Triple; }
+    }
+
+    public bool IsQuadruple
+    {
+        get { return Type == ContractType.Quadruple; }
+    }
+
+    public bool IsMultiplier
+    {
+        get { return IsDouble || IsTriple || IsQuadruple; }
+    }
+
     public string DisplayName
     {
         get
@@ -61,6 +85,12 @@ public class Bid
                     return "Sun";
                 case ContractType.Trump:
                     return Suit.ToString();
+                case ContractType.Double:
+                    return "Double";
+                case ContractType.Triple:
+                    return "Triple";
+                case ContractType.Quadruple:
+                    return "Quadruple";
                 default:
                     return "Unknown";
             }
@@ -74,14 +104,16 @@ public class Bid
         Type = ContractType.Pass;
         Suit = Card32Family.Clubs; // Default suit
         BidValue = 0;
+        Multiplier = 1;
     }
 
     //-------------------------------------------------------
-    public Bid(ContractType type, Card32Family suit = Card32Family.Clubs)
+    public Bid(ContractType type, Card32Family suit = Card32Family.Clubs, int multiplier = 1)
     {
         Type = type;
         Suit = suit;
         BidValue = GetSuitValue(suit);
+        Multiplier = multiplier;
     }
 
     //-------------------------------------------------------
@@ -100,6 +132,24 @@ public class Bid
     public static Bid CreateSun()
     {
         return new Bid(ContractType.Sun);
+    }
+
+    //-------------------------------------------------------
+    public static Bid CreateDouble()
+    {
+        return new Bid(ContractType.Double, Card32Family.Clubs, 2);
+    }
+
+    //-------------------------------------------------------
+    public static Bid CreateTriple()
+    {
+        return new Bid(ContractType.Triple, Card32Family.Clubs, 3);
+    }
+
+    //-------------------------------------------------------
+    public static Bid CreateQuadruple()
+    {
+        return new Bid(ContractType.Quadruple, Card32Family.Clubs, 4);
     }
 
     //-------------------------------------------------------
