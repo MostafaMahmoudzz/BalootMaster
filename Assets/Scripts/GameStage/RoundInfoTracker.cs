@@ -1,6 +1,6 @@
 using UnityEngine;
 using Sirenix.OdinInspector;
-
+using TMPro;
 //----------------------------------------------
 // RoundInfoTracker
 //----------------------------------------------
@@ -14,6 +14,9 @@ using Sirenix.OdinInspector;
 //----------------------------------------------
 public class RoundInfoTracker : MonoBehaviour
 {
+    public TMP_Text RoundNumber;
+
+
     [Title("Round Information")]
     [ShowInInspector, ReadOnly, PropertyOrder(0)]
     [InfoBox("The current round number (starts at 1, increases when round ends or all players pass)")]
@@ -26,6 +29,11 @@ public class RoundInfoTracker : MonoBehaviour
             
             return stage.CurrentRound;
         }
+    }
+
+    public void Update()
+    {
+        RoundNumber.text = "Round Number: " + CurrentRound.ToString();
     }
 
     [Title("Dealer Information")]
