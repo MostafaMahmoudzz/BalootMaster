@@ -41,6 +41,9 @@ public class GameStage : Stage, IDeckOwner
     private GameStageRenderer                  m_renderer;       // UI layer for this stage
 
     private BelootBiddingSystem               m_biddingSystem;  // Bidding system for trump selection
+    
+    private ProjectManager                     m_projectManager; // Projects (Masharie3) system
+    private ProjectUI                          m_projectUI;      // Projects UI component
 
     private EndState m_endState;                                // Success/Fail/None state
 
@@ -168,6 +171,7 @@ public class GameStage : Stage, IDeckOwner
         m_pastFolds = new List<Fold>[Enum.GetValues(typeof(PlayerTeam)).Length];
         m_renderer = new GameStageRenderer();                      // UI renderer instance
         m_biddingSystem = new BelootBiddingSystem();               // Bidding system instance
+        m_projectManager = new ProjectManager(this);               // Projects (Masharie3) system
 
         for(int i = 0; i < m_pastFolds.Length; ++i)
         {
@@ -185,6 +189,12 @@ public class GameStage : Stage, IDeckOwner
 
         m_deck.Init(Definition.Scoring);                           // Create a Belote deck using scoring data
 
+        // Create ProjectUI GameObject
+        GameObject projectUIObj = new GameObject("ProjectUI");
+        m_projectUI = projectUIObj.AddComponent<ProjectUI>();
+        m_projectUI.Init(this, m_projectManager);
+        GameObject.DontDestroyOnLoad(projectUIObj);                // Persist across scene loads
+
         GameEventDispatcher.Subscribe<BeloteCard.Played>(this.OnCardPlayed); // Listen to plays
         GameEventDispatcher.Subscribe<BiddingCompleteEvent>(this.OnBiddingComplete); // Listen to bidding completion
 
@@ -195,6 +205,14 @@ public class GameStage : Stage, IDeckOwner
     protected override void OnShutdown()
     {
         m_renderer.Shutdown();                                     // Cleanup UI
+
+        // Cleanup ProjectUI
+        if (m_projectUI != null)
+        {
+            m_projectUI.Shutdown();
+            GameObject.Destroy(m_projectUI.gameObject);
+            m_projectUI = null;
+        }
 
         GameEventDispatcher.UnSubscribe<BeloteCard.Played>(this.OnCardPlayed); // Stop listening
         GameEventDispatcher.UnSubscribe<BiddingCompleteEvent>(this.OnBiddingComplete); // Stop listening
@@ -251,6 +269,12 @@ public class GameStage : Stage, IDeckOwner
             m_actionQueue.Process();
         }
 
+        // Update project manager (for declaration timer)
+        if (m_projectManager != null)
+        {
+            m_projectManager.Update();
+        }
+
         m_renderer.Update();                                       // Update non-GUI renderer logic
     }
 
@@ -285,7 +309,7 @@ public class GameStage : Stage, IDeckOwner
         AddPlayer<HumanPlayer>(PlayerTeam.Team2, PlayerPosition.East, "East");     // AI at East
     }
 
-    protected Player GetRightPlayer(Player player)
+    public Player GetRightPlayer(Player player)
     {
         if(m_players.Count > 0)
         {
@@ -699,7 +723,14 @@ public class GameStage : Stage, IDeckOwner
             roundEvt.Start = true;
             GameEventDispatcher.SendEvent(roundEvt);
 
-            // Start the first turn
+            // Show project panels (non-blocking)
+            Debug.Log("[GameStage] Showing project panels - game continues");
+            bool isSunRound = evt.SunDeclared;
+            Card32Family? trumpSuit = Trump;
+            m_projectManager.StartRound(isSunRound, trumpSuit);
+            m_projectManager.StartDeclarationPhase();
+            
+            // Start game immediately - don't wait for declarations!
             StartTurn(RoundFirstPlayer);
         }
         else
@@ -757,8 +788,6 @@ public class GameStage : Stage, IDeckOwner
         }
     }
 
-    //----------------------------------------------
-    // OnBiddingNoBids method removed - no longer needed since BiddingCompleteEvent handles no-contract case
 
     //----------------------------------------------
     public void SubmitBid(Player player, Bid bid)
@@ -774,6 +803,8 @@ public class GameStage : Stage, IDeckOwner
     Score m_roundScore = new Score();
     void EndRound()
     {
+        Debug.Log($"[GameStage] === END OF ROUND {m_currentRound} ===");
+        
         m_roundScore.Reset();                                      // Compute points from folds
     
         for(int i = 0; i < m_pastFolds.Length; ++i)
@@ -798,9 +829,19 @@ public class GameStage : Stage, IDeckOwner
         {
             Score.AddScore((PlayerTeam)LastFoldingTeam, 10);       // Last trick bonus
         }
+        
+        // Score projects (Masharie3)
+        if (m_projectManager != null)
+        {
+            Debug.Log("[GameStage] Scoring projects at round end");
+            m_projectManager.ScoreProjects(Score, Bidder);
+        }
+        
         NewRoundEvent evt = Pools.Claim<NewRoundEvent>();          // Announce round end
         evt.Start = false;
         GameEventDispatcher.SendEvent(evt);
+        
+        Debug.Log("[GameStage] Round end event sent - round complete");
     }
 
     //----------------------------------------------
@@ -826,6 +867,12 @@ public class GameStage : Stage, IDeckOwner
 
     protected void OnCardPlayed(BeloteCard.Played evt)
     {
+        // Notify project manager (for Belote detection)
+        if (m_projectManager != null && evt.Card != null && evt.Card.Owner is Player player)
+        {
+            m_projectManager.OnCardPlayed(evt.Card, player);
+        }
+        
         m_afterPlayTimer = s_afterPlayDuration;                    // Start post-play cooldown
     }
 
@@ -846,10 +893,13 @@ public class GameStage : Stage, IDeckOwner
             // New player has no cards in hand, we end the round
             if(winner.Hand.Empty)
             {
+                Debug.Log("[GameStage] All cards played - ending current round and starting next");
                 // Next Round;
                 EndRound();                                        // Score and cleanup round
                 // TODO : Win condition
+                Debug.Log("[GameStage] Calling StartRound() for next round");
                 StartRound();                                      // Begin next round
+                Debug.Log("[GameStage] StartRound() completed - waiting for bidding");
             }
             else
             {
