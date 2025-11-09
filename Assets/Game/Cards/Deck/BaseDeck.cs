@@ -80,6 +80,7 @@ namespace Pebble
             m_cards.Shuffle();
             m_cards.Shuffle();
         }
+        public void InitiateRassa() { }
 
         //------------------------------------------------------
         public void AddCard(CardType card)

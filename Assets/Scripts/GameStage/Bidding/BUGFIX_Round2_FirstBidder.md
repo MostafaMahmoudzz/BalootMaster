@@ -177,3 +177,6 @@ Both rounds now start with the correct first bidder (player to dealer's right)!
 **Date**: November 2, 2025  
 **Tested**: Round 1 and Round 2 bidding progression
 
+
+
+
