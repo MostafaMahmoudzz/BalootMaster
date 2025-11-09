@@ -45,7 +45,11 @@ public class GameStage : Stage, IDeckOwner
     private ProjectManager                     m_projectManager; // Projects (Masharie3) system
     private ProjectUI                          m_projectUI;      // Projects UI component
 
+    private RassaGameIntegration               m_rassaIntegration; // Rassa system integration
+
     private EndState m_endState;                                // Success/Fail/None state
+    
+    private bool m_waitingForRassaChoice = false;               // Flag for Rassa prompt flow
 
     private static int s_invalidRoundCount = 0;                 // Sentinel for uninitialized round (now starts from 0)
 
@@ -195,8 +199,20 @@ public class GameStage : Stage, IDeckOwner
         m_projectUI.Init(this, m_projectManager);
         GameObject.DontDestroyOnLoad(projectUIObj);                // Persist across scene loads
 
+        // Find Rassa integration component
+        m_rassaIntegration = GameObject.FindObjectOfType<RassaGameIntegration>();
+        if (m_rassaIntegration != null)
+        {
+            Debug.Log("[GameStage] Rassa integration found and connected");
+        }
+        else
+        {
+            Debug.LogWarning("[GameStage] No Rassa integration found - Rassa system will not be available");
+        }
+
         GameEventDispatcher.Subscribe<BeloteCard.Played>(this.OnCardPlayed); // Listen to plays
         GameEventDispatcher.Subscribe<BiddingCompleteEvent>(this.OnBiddingComplete); // Listen to bidding completion
+        GameEventDispatcher.Subscribe<RassaChoiceCompleteEvent>(this.OnRassaChoiceComplete); // Listen to Rassa choice
 
         AddPlayers();                                              // Create players for the match
     }
@@ -216,6 +232,7 @@ public class GameStage : Stage, IDeckOwner
 
         GameEventDispatcher.UnSubscribe<BeloteCard.Played>(this.OnCardPlayed); // Stop listening
         GameEventDispatcher.UnSubscribe<BiddingCompleteEvent>(this.OnBiddingComplete); // Stop listening
+        GameEventDispatcher.UnSubscribe<RassaChoiceCompleteEvent>(this.OnRassaChoiceComplete); // Stop listening to Rassa
 
         foreach (Player player in m_players)
         {
@@ -461,6 +478,75 @@ public class GameStage : Stage, IDeckOwner
             Debug.Log($"[GameStage] Round {m_currentRound}: First round - no cards to collect");
         }
 
+        // ===== RASSA INTEGRATION: Check if we should ask about Rassa =====
+        // Determine the round first player (who will be the bidder)
+        Player roundFirstPlayer = GetRoundFirstPlayer();
+        
+        if (m_rassaIntegration != null && !m_waitingForRassaChoice)
+        {
+            bool shouldWait = !m_rassaIntegration.CheckRassaBeforeDealing(roundFirstPlayer, m_currentRound, m_deck);
+            if (shouldWait)
+            {
+                Debug.Log("[GameStage] Waiting for Rassa choice from player...");
+                m_waitingForRassaChoice = true;
+                return; // Don't proceed yet, wait for player's response
+            }
+        }
+        // ===== END RASSA INTEGRATION =====
+
+        Debug.Log($"[GameStage] Dealing cards to each player for Round {m_currentRound}");
+        DealCards();                                               // Distribute cards (rotates dealer)
+
+        // Reset bidding system for new round
+        m_biddingSystem.Reset();
+        Debug.Log($"[GameStage] Starting Round {m_currentRound} - Bidding system reset");
+
+        // Start bidding round
+        StartBiddingRound();
+    }
+
+    //----------------------------------------------
+    // Helper to determine who will be the first player this round (before DealCards is called)
+    private Player GetRoundFirstPlayer()
+    {
+        // If dealer is not set yet, it will be players[0]
+        Player currentDealer = Dealer ?? m_players[0];
+        
+        // The first player is to the right of the dealer
+        return GetRightPlayer(currentDealer);
+    }
+
+    //----------------------------------------------
+    // Called when player makes Rassa choice
+    private void OnRassaChoiceComplete(RassaChoiceCompleteEvent evt)
+    {
+        if (!m_waitingForRassaChoice)
+        {
+            return; // Not waiting, ignore
+        }
+
+        Debug.Log($"[GameStage] Received Rassa choice: {(evt.UseRassa ? "Use Rassa" : "Random deck")}");
+        m_waitingForRassaChoice = false;
+
+        // If player chose to use Rassa, apply it to the deck
+        if (evt.UseRassa && m_rassaIntegration != null)
+        {
+            bool success = m_rassaIntegration.ApplyRassaToDeck(m_deck);
+            if (!success)
+            {
+                Debug.LogWarning("[GameStage] Failed to apply Rassa, continuing with normal shuffled deck");
+            }
+        }
+
+        // Now continue with dealing cards
+        Debug.Log($"[GameStage] Continuing with card dealing for Round {m_currentRound}");
+        ContinueRoundAfterRassa();
+    }
+
+    //----------------------------------------------
+    // Continue the round after Rassa choice
+    private void ContinueRoundAfterRassa()
+    {
         Debug.Log($"[GameStage] Dealing cards to each player for Round {m_currentRound}");
         DealCards();                                               // Distribute cards (rotates dealer)
 
