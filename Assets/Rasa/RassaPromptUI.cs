@@ -19,6 +19,13 @@ public class RassaPromptUI : MonoBehaviour
     [Header("Settings")]
     public string promptMessage = "Play with Rassa?\n(Use your custom card arrangement)";
     public float displayDuration = 0f; // 0 = wait for player input, >0 = auto-close after X seconds
+    
+    [Header("AI Behavior")]
+    [Tooltip("If true, AI can randomly choose to use Rassa. If false, AI always uses random deck.")]
+    public bool aiCanUseRassa = false;
+    [Tooltip("Chance (0-100) that AI will choose Rassa if allowed")]
+    [Range(0, 100)]
+    public int aiRassaChance = 0;
 
     private Player currentPlayer;
     private bool waitingForResponse = false;
@@ -64,25 +71,51 @@ public class RassaPromptUI : MonoBehaviour
         Debug.Log($"[RassaPromptUI] Received prompt for player: {evt.AskingPlayer?.Name}");
 
         currentPlayer = evt.AskingPlayer;
-        waitingForResponse = true;
 
-        // Update message text
-        if (messageText != null)
+        // Check if this is a human player - only show UI for human players
+        if (currentPlayer is HumanPlayer)
         {
-            string playerName = evt.AskingPlayer?.Name ?? "Player";
-            messageText.text = $"{playerName}, {promptMessage}";
+            Debug.Log($"[RassaPromptUI] Showing prompt for HUMAN player: {currentPlayer.Name}");
+            waitingForResponse = true;
+
+            // Update message text with clear player identification
+            if (messageText != null)
+            {
+                string playerName = evt.AskingPlayer?.Name ?? "Player";
+                messageText.text = $"<b><size=40>{playerName}</size></b>\n\n{promptMessage}";
+            }
+
+            // Show the panel
+            if (promptPanel != null)
+            {
+                promptPanel.SetActive(true);
+            }
+
+            // If auto-close is enabled, close after duration
+            if (displayDuration > 0)
+            {
+                Invoke(nameof(OnNoClicked), displayDuration); // Default to "No" if no response
+            }
         }
-
-        // Show the panel
-        if (promptPanel != null)
+        else
         {
-            promptPanel.SetActive(true);
-        }
-
-        // If auto-close is enabled, close after duration
-        if (displayDuration > 0)
-        {
-            Invoke(nameof(OnNoClicked), displayDuration); // Default to "No" if no response
+            // AI Player - automatically respond
+            bool aiWillUseRassa = false;
+            
+            if (aiCanUseRassa)
+            {
+                // AI randomly decides based on chance
+                int roll = UnityEngine.Random.Range(0, 100);
+                aiWillUseRassa = roll < aiRassaChance;
+            }
+            
+            Debug.Log($"[RassaPromptUI] AI player {currentPlayer?.Name} - auto-responding {(aiWillUseRassa ? "YES (Rassa)" : "NO (Random)")}");
+            
+            // Send automatic response for AI
+            RassaResponseEvent evt_response = Pools.Claim<RassaResponseEvent>();
+            evt_response.UseRassa = aiWillUseRassa;
+            evt_response.RespondingPlayer = currentPlayer;
+            GameEventDispatcher.SendEvent(evt_response);
         }
     }
 

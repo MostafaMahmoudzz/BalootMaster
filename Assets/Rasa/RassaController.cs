@@ -188,7 +188,7 @@ public class RassaController : MonoBehaviour
         if (RassaCardsFinalOrderScriptable != null)
         {
             RassaCardsFinalOrderScriptable.cardsInfo.Clear();
-
+            orderedRassaCards.Reverse();
             foreach (var card in orderedRassaCards)
             {
                 RassaCardsFinalOrderScriptable.cardsInfo.Add(new CardInfo(card.Value, card.Family));

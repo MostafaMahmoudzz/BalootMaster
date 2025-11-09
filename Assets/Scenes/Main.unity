@@ -1656,7 +1656,9 @@ MonoBehaviour:
   promptMessage: 'Play with Rassa?
 
     (Use your custom card arrangement)'
-  displayDuration: 10
+  displayDuration: 10000
+  aiCanUseRassa: 0
+  aiRassaChance: 0
 --- !u!1 &1227420206
 GameObject:
   m_ObjectHideFlags: 0
@@ -3827,7 +3829,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rassaDeckManager: {fileID: 1215393478}
-  rassaPromptUI: {fileID: 0}
+  rassaPromptUI: {fileID: 1215393479}
   enableRassaSystem: 1
   askEveryRound: 1
 --- !u!1 &1826677480
