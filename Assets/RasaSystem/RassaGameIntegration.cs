@@ -11,6 +11,7 @@ public class RassaGameIntegration : MonoBehaviour
     [Header("References")]
     public RassaDeckManager rassaDeckManager;
     public RassaPromptUI rassaPromptUI;
+    public AssaaSystem assaaSystem;  // NEW: Assaa system integration
 
     [Header("Settings")]
     public bool enableRassaSystem = true;
@@ -19,8 +20,11 @@ public class RassaGameIntegration : MonoBehaviour
     private BeloteGame beloteGame;
     private GameStage gameStage;
     private bool waitingForRassaResponse = false;
+    private bool waitingForAssaaProcess = false;  // NEW: Flag for Assaa flow
     private bool rassaChoiceMade = false;
     private bool useRassaForThisGame = false;
+    private Player currentRassaChooser = null;  // NEW: Track who chose Rassa
+    private BeloteDeck currentDeck = null;  // NEW: Track the deck for Assaa
 
     private void Awake()
     {
@@ -28,6 +32,7 @@ public class RassaGameIntegration : MonoBehaviour
         
         // Subscribe to events
         GameEventDispatcher.Subscribe<RassaResponseEvent>(OnRassaResponse);
+        GameEventDispatcher.Subscribe<AssaaProcessCompleteEvent>(OnAssaaProcessComplete);  // NEW: Subscribe to Assaa events
         
         Debug.Log("[RassaGameIntegration] Initialized");
     }
@@ -53,16 +58,29 @@ public class RassaGameIntegration : MonoBehaviour
             rassaPromptUI = FindObjectOfType<RassaPromptUI>();
         }
 
+        // NEW: Find Assaa system
+        if (assaaSystem == null)
+        {
+            Debug.LogWarning("[RassaGameIntegration] AssaaSystem not assigned! Looking for it...");
+            assaaSystem = FindObjectOfType<AssaaSystem>();
+        }
+
         if (rassaDeckManager == null || rassaPromptUI == null)
         {
             Debug.LogError("[RassaGameIntegration] Missing required components! Rassa system will not work.");
             enableRassaSystem = false;
+        }
+
+        if (assaaSystem == null)
+        {
+            Debug.LogWarning("[RassaGameIntegration] AssaaSystem not found - Assaa feature will be disabled");
         }
     }
 
     private void OnDestroy()
     {
         GameEventDispatcher.UnSubscribe<RassaResponseEvent>(OnRassaResponse);
+        GameEventDispatcher.UnSubscribe<AssaaProcessCompleteEvent>(OnAssaaProcessComplete);  // NEW: Unsubscribe from Assaa
     }
 
     /// <summary>
@@ -75,6 +93,13 @@ public class RassaGameIntegration : MonoBehaviour
         {
             Debug.Log("[RassaGameIntegration] Rassa system disabled, proceeding with normal dealing");
             return true; // Proceed normally
+        }
+
+        // NEW: Check if we're waiting for Assaa process to complete
+        if (waitingForAssaaProcess)
+        {
+            Debug.Log("[RassaGameIntegration] Still waiting for Assaa process...");
+            return false; // Don't proceed yet
         }
 
         // Check if we should ask (first round only, or every round)
@@ -110,6 +135,9 @@ public class RassaGameIntegration : MonoBehaviour
             return false; // Don't proceed yet
         }
 
+        // NEW: Store deck reference for Assaa
+        currentDeck = deck;
+
         // Ask the player
         Debug.Log($"[RassaGameIntegration] Asking {roundFirstPlayer?.Name} about using Rassa");
         waitingForRassaResponse = true;
@@ -136,20 +164,69 @@ public class RassaGameIntegration : MonoBehaviour
         waitingForRassaResponse = false;
         rassaChoiceMade = true;
         useRassaForThisGame = evt.UseRassa;
+        currentRassaChooser = evt.RespondingPlayer;  // NEW: Store who chose Rassa
 
         Debug.Log($"[RassaGameIntegration] Player {evt.RespondingPlayer?.Name} chose: {(evt.UseRassa ? "Use Rassa" : "Random deck")}");
 
-        // Apply Rassa if chosen
-        if (evt.UseRassa && gameStage != null)
+        // NEW: If Rassa was chosen (YES), start Assaa process
+        if (evt.UseRassa)
         {
-            // We need to arrange the deck before dealing
-            // This will be done in the next frame by GameStage
-            Debug.Log("[RassaGameIntegration] Rassa will be applied to deck");
+            Debug.Log("[RassaGameIntegration] Rassa chosen - starting Assaa process");
+            
+            // Apply Rassa order to deck first
+            if (gameStage != null && currentDeck != null)
+            {
+                ApplyRassaToDeck(currentDeck);
+            }
+
+            // Start Assaa system if available
+            if (assaaSystem != null && assaaSystem.enableAssaaSystem)
+            {
+                waitingForAssaaProcess = true;
+                assaaSystem.StartAssaaProcess(currentRassaChooser, currentDeck, gameStage);
+                // Wait for Assaa to complete before continuing
+                return;
+            }
+            else
+            {
+                Debug.Log("[RassaGameIntegration] Assaa system not available or disabled - continuing without Assaa");
+            }
         }
 
+        // If Rassa was not chosen OR Assaa is disabled, continue immediately
+        NotifyRassaChoiceComplete(evt.UseRassa);
+    }
+
+    /// <summary>
+    /// NEW: Called when Assaa process is complete
+    /// </summary>
+    private void OnAssaaProcessComplete(AssaaProcessCompleteEvent evt)
+    {
+        if (!waitingForAssaaProcess)
+        {
+            Debug.LogWarning("[RassaGameIntegration] Received unexpected Assaa process complete event");
+            return;
+        }
+
+        waitingForAssaaProcess = false;
+
+        Debug.Log($"[RassaGameIntegration] ✅ Assaa process complete - Assaa was {(evt.AssaaWasUsed ? "used" : "not used")}");
+        Debug.Log($"[RassaGameIntegration] Rassa was already applied, {(evt.AssaaWasUsed ? "and Assaa modified it" : "with no Assaa modifications")}");
+        Debug.Log($"[RassaGameIntegration] Notifying GameStage to continue with dealing...");
+        
+        // After Assaa, continue with the game (Rassa was already applied before Assaa)
+        NotifyRassaChoiceComplete(true);  // Rassa was chosen, continue
+    }
+
+    /// <summary>
+    /// NEW: Notify GameStage that Rassa/Assaa process is complete
+    /// </summary>
+    private void NotifyRassaChoiceComplete(bool useRassa)
+    {
         // Notify GameStage to continue (via custom event or direct call)
         RassaChoiceCompleteEvent choiceEvt = Pools.Claim<RassaChoiceCompleteEvent>();
-        choiceEvt.UseRassa = evt.UseRassa;
+        choiceEvt.UseRassa = useRassa;
+        choiceEvt.AlreadyApplied = useRassa; // NEW: Tell GameStage we already applied Rassa (and possibly Assaa modified it)
         GameEventDispatcher.SendEvent(choiceEvt);
     }
 
@@ -197,11 +274,11 @@ public class RassaGameIntegration : MonoBehaviour
     }
 
     /// <summary>
-    /// Check if currently waiting for Rassa response
+    /// Check if currently waiting for Rassa/Assaa response
     /// </summary>
     public bool IsWaitingForResponse()
     {
-        return waitingForRassaResponse;
+        return waitingForRassaResponse || waitingForAssaaProcess;  // NEW: Also check Assaa
     }
 }
 
@@ -211,10 +288,12 @@ public class RassaGameIntegration : MonoBehaviour
 public class RassaChoiceCompleteEvent : PooledEvent
 {
     public bool UseRassa { get; set; }
+    public bool AlreadyApplied { get; set; }  // NEW: True if Rassa was already applied (don't apply again)
 
     public override void Reset()
     {
         UseRassa = false;
+        AlreadyApplied = false;
     }
 }
 

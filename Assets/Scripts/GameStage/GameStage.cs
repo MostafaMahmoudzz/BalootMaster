@@ -541,14 +541,20 @@ public class GameStage : Stage, IDeckOwner
         Debug.Log($"[GameStage] Received Rassa choice: {(evt.UseRassa ? "Use Rassa" : "Random deck")}");
         m_waitingForRassaChoice = false;
 
-        // If player chose to use Rassa, apply it to the deck
-        if (evt.UseRassa && m_rassaIntegration != null)
+        // If player chose to use Rassa, apply it to the deck (only if not already applied)
+        // Note: If Assaa was used, Rassa was already applied and Assaa modified it - don't reapply!
+        if (evt.UseRassa && m_rassaIntegration != null && !evt.AlreadyApplied)
         {
+            Debug.Log("[GameStage] Applying Rassa order to deck...");
             bool success = m_rassaIntegration.ApplyRassaToDeck(m_deck);
             if (!success)
             {
                 Debug.LogWarning("[GameStage] Failed to apply Rassa, continuing with normal shuffled deck");
             }
+        }
+        else if (evt.UseRassa && evt.AlreadyApplied)
+        {
+            Debug.Log("[GameStage] Rassa already applied (Assaa may have modified it) - not reapplying");
         }
 
         // Now continue with dealing cards
