@@ -429,29 +429,42 @@ public class GameStage : Stage, IDeckOwner
         Debug.Log($"[GameStage] Contract maker: {contractMaker.Name}");
         Debug.Log($"[GameStage] Face-up card: {(faceUpCard != null ? $"{faceUpCard.Value} of {faceUpCard.Family}" : "None")}");
         
-        // Contract maker gets the face-up card + 2 additional cards (total 8)
+        // Step 1: Contract maker takes the face-up card from the table
         if (faceUpCard != null)
         {
             contractMaker.Hand.AddCard(faceUpCard);                // Give face-up card to contract maker
             faceUpCard.Owner = contractMaker;                      // Set ownership
-            Debug.Log($"[GameStage] {contractMaker.Name} receives face-up card: {faceUpCard.Value} of {faceUpCard.Family}");
+            Debug.Log($"[GameStage] {contractMaker.Name} takes the face-up card from table: {faceUpCard.Value} of {faceUpCard.Family}");
         }
         
-        // Deal 2 additional cards to contract maker (since they already got the face-up card)
-        m_deck.MoveCardsTo(2, contractMaker.Hand);
-        Debug.Log($"[GameStage] {contractMaker.Name} receives 2 additional cards (total: {contractMaker.Hand.Size} cards)");
-        
-        // Deal 3 cards to all other players
-        foreach (Player player in m_players)
+        // Step 2: Deal remaining cards starting from dealer's right (anti-clockwise)
+        // Everyone gets 3 cards, EXCEPT contract maker gets only 2 (already has face-up card)
+        if (RoundFirstPlayer == null)
         {
-            if (player != contractMaker)
-            {
-                m_deck.MoveCardsTo(3, player.Hand);
-                Debug.Log($"[GameStage] {player.Name} receives 3 additional cards (total: {player.Hand.Size} cards)");
-            }
+            Debug.LogError("[GameStage] Cannot deal remaining cards - RoundFirstPlayer is null!");
+            return;
         }
         
-        Debug.Log($"[GameStage] Contract completed - {contractMaker.Name} has {contractMaker.Hand.Size} cards total");
+        Debug.Log($"[GameStage] Dealing remaining cards starting from {RoundFirstPlayer.Name} (dealer's right), going anti-clockwise");
+        
+        Player player = RoundFirstPlayer;
+        int playerCount = 0;
+        do
+        {
+            playerCount++;
+            
+            // Contract maker gets 2 cards, everyone else gets 3 cards
+            int cardsToGive = (player == contractMaker) ? 2 : 3;
+            
+            Debug.Log($"[GameStage] [{playerCount}/{m_players.Count}] Dealing {cardsToGive} cards to {player.Name} (deck has {m_deck.Size} cards)");
+            m_deck.MoveCardsTo(cardsToGive, player.Hand);
+            Debug.Log($"[GameStage] {player.Name} now has {player.Hand.Size} cards total");
+            
+            player = GetRightPlayer(player);                       // Next player anti-clockwise (to the right)
+        }
+        while(player != RoundFirstPlayer);
+        
+        Debug.Log($"[GameStage] === REMAINING CARDS DEALT - All players have 8 cards ===");
     }
 
     //----------------------------------------------
