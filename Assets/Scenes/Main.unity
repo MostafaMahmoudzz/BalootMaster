@@ -3390,7 +3390,7 @@ MonoBehaviour:
   promptMessage: 'Play with Rassa?
 
     (Use your custom card arrangement)'
-  displayDuration: 10000
+  displayDuration: 10
   aiCanUseRassa: 0
   aiRassaChance: 0
 --- !u!1 &1227420206
