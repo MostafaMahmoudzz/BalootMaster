@@ -909,38 +909,154 @@ public class GameStage : Stage, IDeckOwner
     void EndRound()
     {
         Debug.Log($"[GameStage] === END OF ROUND {m_currentRound} ===");
+        Debug.Log($"[GameStage] Bidding Team: {Bidder.Team}");
         
         m_roundScore.Reset();                                      // Compute points from folds
     
+        // Step 1: Sum all fold points for each team
+        Debug.Log("[GameStage] Step 1: Calculating fold points...");
+        int totalFolds = 0;
         for(int i = 0; i < m_pastFolds.Length; ++i)
         {
             PlayerTeam team = (PlayerTeam) i;
             List<Fold> folds = m_pastFolds[i];
+            Debug.Log($"[GameStage] {team} won {folds.Count} folds");
             foreach(Fold fold in folds)
             {
+                totalFolds++;
+                Debug.Log($"[GameStage] Fold {totalFolds}: {fold.Deck.Size} cards, {fold.Points} points for {team}");
                 m_roundScore.AddScore(team, fold.Points);          // Sum points of each fold
                 fold.Deck.MoveAllCardsTo(m_deck);                   // Return cards to deck
             }
         }
+        
+        Debug.Log($"[GameStage] Total folds played: {totalFolds} (should be 8 for a complete round)");
+        Debug.Log($"[GameStage] Fold Points - Team1: {m_roundScore.GetScore(PlayerTeam.Team1)}, Team2: {m_roundScore.GetScore(PlayerTeam.Team2)}");
 
-        PlayerTeam winningTeam = m_roundScore.GetLeadingTeam(Bidder.Team); // Determine round winner
-
-        // TODO : Round points
-        // TODO : Bet
-        Score.AddScore(winningTeam, m_roundScore.GetScore(winningTeam)); // Add round points to global score
-
-        // 10 de der
+        // Step 2: Add "10 de der" (last trick bonus)
         if(LastFoldingTeam != null)
         {
-            Score.AddScore((PlayerTeam)LastFoldingTeam, 10);       // Last trick bonus
+            Debug.Log($"[GameStage] Step 2: Adding '10 de der' to {LastFoldingTeam}");
+            m_roundScore.AddScore((PlayerTeam)LastFoldingTeam, 10);       // Last trick bonus
         }
         
-        // Score projects (Masharie3)
+        Debug.Log($"[GameStage] After '10 de der' - Team1: {m_roundScore.GetScore(PlayerTeam.Team1)}, Team2: {m_roundScore.GetScore(PlayerTeam.Team2)}");
+        
+        // Step 3: Score projects (Masharie3) - add to round score, not global score
         if (m_projectManager != null)
         {
-            Debug.Log("[GameStage] Scoring projects at round end");
-            m_projectManager.ScoreProjects(Score, Bidder);
+            Debug.Log("[GameStage] Step 3: Scoring projects...");
+            m_projectManager.ScoreProjects(m_roundScore, Bidder);
         }
+        
+        int team1TotalPoints = m_roundScore.GetScore(PlayerTeam.Team1);
+        int team2TotalPoints = m_roundScore.GetScore(PlayerTeam.Team2);
+        Debug.Log($"[GameStage] Total Points (before division) - Team1: {team1TotalPoints}, Team2: {team2TotalPoints}");
+
+        // Step 4: Determine which team won the round
+        PlayerTeam roundWinner = m_roundScore.GetLeadingTeam(Bidder.Team);
+        PlayerTeam biddingTeam = Bidder.Team;
+        bool biddingTeamWon = (roundWinner == biddingTeam);
+        
+        Debug.Log($"[GameStage] Step 4: Round winner: {roundWinner}, Bidding team won: {biddingTeamWon}");
+        
+        // Step 5: Check for Kaboot (one team has 0 points = won all tricks)
+        bool isKaboot = (team1TotalPoints == 0 || team2TotalPoints == 0) && (team1TotalPoints + team2TotalPoints > 0);
+        Debug.Log($"[GameStage] Step 5: Kaboot check - IsKaboot: {isKaboot}");
+        
+        // Step 6: Divide by 10 and round to convert to game scores
+        Debug.Log("[GameStage] Step 6: Dividing by 10 and rounding...");
+        int team1RoundScore;
+        int team2RoundScore;
+        
+        if (isKaboot)
+        {
+            // Kaboot: Winner gets 16 points base (before multiplier), loser gets 0
+            team1RoundScore = (team1TotalPoints > 0) ? 16 : 0;
+            team2RoundScore = (team2TotalPoints > 0) ? 16 : 0;
+            Debug.Log($"[GameStage] KABOOT! Winner gets 16 points base");
+        }
+        else
+        {
+            // Normal: Divide by 10 and round
+            team1RoundScore = Mathf.RoundToInt(team1TotalPoints / 10f);
+            team2RoundScore = Mathf.RoundToInt(team2TotalPoints / 10f);
+        }
+        
+        Debug.Log($"[GameStage] After division - Team1: {team1RoundScore}, Team2: {team2RoundScore}");
+        
+        // Step 7: Get multiplier from bidding system
+        int multiplier = 1;
+        if (m_biddingSystem != null && m_biddingSystem.HighestBid != null)
+        {
+            multiplier = m_biddingSystem.HighestBid.Multiplier;
+        }
+        Debug.Log($"[GameStage] Step 7: Multiplier from bidding: {multiplier}x");
+        
+        // Step 8: Apply multiplier and Baloot winning rules
+        Debug.Log("[GameStage] Step 8: Applying multiplier and winner rules...");
+        int team1FinalScore = 0;
+        int team2FinalScore = 0;
+        
+        if (biddingTeamWon)
+        {
+            // Bidding team won: They get their score multiplied, opponent gets 0
+            if (biddingTeam == PlayerTeam.Team1)
+            {
+                team1FinalScore = team1RoundScore * multiplier;
+                team2FinalScore = 0;
+                Debug.Log($"[GameStage] Team1 (bidder) won: {team1RoundScore} × {multiplier} = {team1FinalScore}");
+            }
+            else
+            {
+                team2FinalScore = team2RoundScore * multiplier;
+                team1FinalScore = 0;
+                Debug.Log($"[GameStage] Team2 (bidder) won: {team2RoundScore} × {multiplier} = {team2FinalScore}");
+            }
+        }
+        else
+        {
+            // Bidding team lost: Opponent gets their score multiplied, bidding team gets 0
+            if (biddingTeam == PlayerTeam.Team1)
+            {
+                team1FinalScore = 0;
+                team2FinalScore = team2RoundScore * multiplier;
+                Debug.Log($"[GameStage] Team1 (bidder) lost: Team2 gets {team2RoundScore} × {multiplier} = {team2FinalScore}");
+            }
+            else
+            {
+                team2FinalScore = 0;
+                team1FinalScore = team1RoundScore * multiplier;
+                Debug.Log($"[GameStage] Team2 (bidder) lost: Team1 gets {team1RoundScore} × {multiplier} = {team1FinalScore}");
+            }
+        }
+        
+        Debug.Log($"[GameStage] === FINAL ROUND SCORES ===");
+        Debug.Log($"[GameStage] Team1 Final: {team1FinalScore} points");
+        Debug.Log($"[GameStage] Team2 Final: {team2FinalScore} points");
+        Debug.Log($"[GameStage] Kaboot: {isKaboot}, Multiplier: {multiplier}x, Bidder Won: {biddingTeamWon}");
+        
+        // Step 9: Add final scores to global score
+        Score.AddScore(PlayerTeam.Team1, team1FinalScore);
+        Score.AddScore(PlayerTeam.Team2, team2FinalScore);
+        
+        Debug.Log($"[GameStage] === CUMULATIVE SCORES ===");
+        Debug.Log($"[GameStage] Team1 Total: {Score.GetScore(PlayerTeam.Team1)} points");
+        Debug.Log($"[GameStage] Team2 Total: {Score.GetScore(PlayerTeam.Team2)} points");
+        
+        // Send round end event with scoring details
+        RoundEndScoreEvent scoreEvt = Pools.Claim<RoundEndScoreEvent>();
+        scoreEvt.Team1RawPoints = team1TotalPoints;
+        scoreEvt.Team2RawPoints = team2TotalPoints;
+        scoreEvt.Team1RoundScore = team1FinalScore;
+        scoreEvt.Team2RoundScore = team2FinalScore;
+        scoreEvt.BiddingTeam = biddingTeam;
+        scoreEvt.WinningTeam = roundWinner;
+        scoreEvt.Multiplier = multiplier;
+        scoreEvt.IsKaboot = isKaboot;
+        scoreEvt.Team1CumulativeScore = Score.GetScore(PlayerTeam.Team1);
+        scoreEvt.Team2CumulativeScore = Score.GetScore(PlayerTeam.Team2);
+        GameEventDispatcher.SendEvent(scoreEvt);
         
         NewRoundEvent evt = Pools.Claim<NewRoundEvent>();          // Announce round end
         evt.Start = false;
@@ -1043,6 +1159,34 @@ public class GameStage : Stage, IDeckOwner
         public override void Reset()
         {
             // No specific data needed for this event
+        }
+    }
+
+    public class RoundEndScoreEvent : PooledEvent
+    {
+        public int Team1RawPoints { get; set; }          // Raw points before division
+        public int Team2RawPoints { get; set; }          // Raw points before division
+        public int Team1RoundScore { get; set; }         // Final round score after division and multiplier
+        public int Team2RoundScore { get; set; }         // Final round score after division and multiplier
+        public PlayerTeam BiddingTeam { get; set; }      // Which team bid
+        public PlayerTeam WinningTeam { get; set; }      // Which team won the round
+        public int Multiplier { get; set; }              // Multiplier applied (1, 2, 3, or 4)
+        public bool IsKaboot { get; set; }               // Whether it was a Kaboot (won all tricks)
+        public int Team1CumulativeScore { get; set; }    // Total score after this round
+        public int Team2CumulativeScore { get; set; }    // Total score after this round
+
+        public override void Reset()
+        {
+            Team1RawPoints = 0;
+            Team2RawPoints = 0;
+            Team1RoundScore = 0;
+            Team2RoundScore = 0;
+            BiddingTeam = PlayerTeam.Team1;
+            WinningTeam = PlayerTeam.Team1;
+            Multiplier = 1;
+            IsKaboot = false;
+            Team1CumulativeScore = 0;
+            Team2CumulativeScore = 0;
         }
     }
 }

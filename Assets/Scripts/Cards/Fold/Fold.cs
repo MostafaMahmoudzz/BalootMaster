@@ -54,6 +54,14 @@ public class Fold
         {
             Winner = bestCard.Owner as Player;      // Winner owns the best card
             Points = GetPoints(trumpFamily);         // Sum points for this trick
+            Debug.Log($"[Fold] Finalized - Winner: {Winner?.Name}, Points: {Points}, Trump: {trumpFamily}, Cards in fold: {Deck.Size}");
+            
+            // Debug individual card points
+            foreach(BeloteCard card in Deck.Cards)
+            {
+                int cardPoints = card.GetPoint(trumpFamily);
+                Debug.Log($"[Fold]   {card.Value} of {card.Family}: {cardPoints} points (Trump: {card.Family == trumpFamily})");
+            }
         }
     }
 

@@ -23,6 +23,9 @@ public class GameStageRenderer
     // Variables
     private List<CardComponent> m_cards; // All instantiated card views
     private CardComponent m_faceUpCardComponent; // Track the face-up card component specifically
+    private GameStage.RoundEndScoreEvent m_lastRoundScore; // Store last round's score details for display
+    private float m_scoreDisplayTimer = 0f; // Timer to show score details
+    private const float SCORE_DISPLAY_DURATION = 5f; // How long to show score details
 
     //----------------------------------------------
     // Properties
@@ -48,6 +51,7 @@ public class GameStageRenderer
         GameEventDispatcher.Subscribe<BiddingStartEvent>(this.OnBiddingStart);                   // Handle bidding start
         GameEventDispatcher.Subscribe<BiddingCompleteEvent>(this.OnBiddingComplete);             // Handle bidding complete
         GameEventDispatcher.Subscribe<GameStage.CardsCollectedEvent>(this.OnCardsCollected);     // Handle card collection
+        GameEventDispatcher.Subscribe<GameStage.RoundEndScoreEvent>(this.OnRoundEndScore);       // Handle round end scoring
     }
 
     public  void Shutdown()
@@ -58,6 +62,7 @@ public class GameStageRenderer
         GameEventDispatcher.UnSubscribe<BiddingStartEvent>(this.OnBiddingStart);
         GameEventDispatcher.UnSubscribe<BiddingCompleteEvent>(this.OnBiddingComplete);
         GameEventDispatcher.UnSubscribe<GameStage.CardsCollectedEvent>(this.OnCardsCollected);
+        GameEventDispatcher.UnSubscribe<GameStage.RoundEndScoreEvent>(this.OnRoundEndScore);
         
         // Clean up face-up card
         UnSpawnFaceUpCard();
@@ -69,7 +74,11 @@ public class GameStageRenderer
     //---------------------------------------------
     public void Update()
     {
-
+        // Update score display timer
+        if (m_scoreDisplayTimer > 0)
+        {
+            m_scoreDisplayTimer -= Time.deltaTime;
+        }
     }
 
     public void UpdateGUI()
@@ -134,6 +143,12 @@ public class GameStageRenderer
                         GUI.Label(new Rect(UnityEngine.Screen.width - 320, 410, 250, 30), "Cannot choose: " + Stage.FaceUpCard.Family + " (face-up suit)");
                         GUI.Label(new Rect(UnityEngine.Screen.width - 320, 440, 250, 30), "Choose any other suit as trump");
                     }
+                }
+                
+                // Display round end score breakdown if available
+                if (m_lastRoundScore != null && m_scoreDisplayTimer > 0)
+                {
+                    DisplayRoundScoreBreakdown();
                 }
 
             }
@@ -254,6 +269,14 @@ public class GameStageRenderer
         CleanupAllFaceUpCards();
         
         DebugCardCount();
+    }
+
+    //----------------------------------------------
+    protected void OnRoundEndScore(GameStage.RoundEndScoreEvent evt)
+    {
+        Debug.Log("[GameStageRenderer] Round end score event received - displaying score breakdown");
+        m_lastRoundScore = evt;
+        m_scoreDisplayTimer = SCORE_DISPLAY_DURATION;
     }
 
     protected void SpawnCards()
@@ -549,6 +572,101 @@ public class GameStageRenderer
     {
         int totalCards = GameObject.FindObjectsOfType<CardComponent>().Length;
         Debug.Log($"Total CardComponents in scene: {totalCards}, Tracked cards: {m_cards.Count}, Face-up card: {(m_faceUpCardComponent != null ? "Yes" : "No")}");
+    }
+
+    //----------------------------------------------
+    // Display detailed round score breakdown
+    private void DisplayRoundScoreBreakdown()
+    {
+        if (m_lastRoundScore == null) return;
+        
+        float startX = 20;
+        float startY = 20;
+        float lineHeight = 25;
+        float panelWidth = 450;
+        int line = 0;
+        
+        // Background box
+        GUI.Box(new Rect(startX - 10, startY - 10, panelWidth + 20, lineHeight * 18 + 20), "");
+        
+        // Title
+        GUI.Label(new Rect(startX, startY + line++ * lineHeight, panelWidth, lineHeight), "=== ROUND END SCORE BREAKDOWN ===");
+        line++;
+        
+        // Team 1 Scores
+        GUI.Label(new Rect(startX, startY + line++ * lineHeight, panelWidth, lineHeight), 
+            $"Team 1 (South & North) {(m_lastRoundScore.BiddingTeam == PlayerTeam.Team1 ? "[BIDDER]" : "")}");
+        GUI.Label(new Rect(startX + 20, startY + line++ * lineHeight, panelWidth, lineHeight), 
+            $"Raw Points: {m_lastRoundScore.Team1RawPoints}");
+        
+        int team1Divided = m_lastRoundScore.IsKaboot && m_lastRoundScore.Team1RawPoints > 0 ? 
+            16 : Mathf.RoundToInt(m_lastRoundScore.Team1RawPoints / 10f);
+        GUI.Label(new Rect(startX + 20, startY + line++ * lineHeight, panelWidth, lineHeight), 
+            m_lastRoundScore.IsKaboot && m_lastRoundScore.Team1RawPoints > 0 ? 
+            $"Kaboot Bonus: {team1Divided}" : $"Divided by 10: {team1Divided}");
+        
+        if (m_lastRoundScore.Multiplier > 1 && m_lastRoundScore.Team1RoundScore > 0)
+        {
+            GUI.Label(new Rect(startX + 20, startY + line++ * lineHeight, panelWidth, lineHeight), 
+                $"Multiplier: ×{m_lastRoundScore.Multiplier}");
+        }
+        
+        GUI.Label(new Rect(startX + 20, startY + line++ * lineHeight, panelWidth, lineHeight), 
+            $"Round Score: +{m_lastRoundScore.Team1RoundScore} {(m_lastRoundScore.Team1RoundScore > 0 ? "✓" : "✗")}");
+        
+        line++;
+        
+        // Team 2 Scores
+        GUI.Label(new Rect(startX, startY + line++ * lineHeight, panelWidth, lineHeight), 
+            $"Team 2 (West & East) {(m_lastRoundScore.BiddingTeam == PlayerTeam.Team2 ? "[BIDDER]" : "")}");
+        GUI.Label(new Rect(startX + 20, startY + line++ * lineHeight, panelWidth, lineHeight), 
+            $"Raw Points: {m_lastRoundScore.Team2RawPoints}");
+        
+        int team2Divided = m_lastRoundScore.IsKaboot && m_lastRoundScore.Team2RawPoints > 0 ? 
+            16 : Mathf.RoundToInt(m_lastRoundScore.Team2RawPoints / 10f);
+        GUI.Label(new Rect(startX + 20, startY + line++ * lineHeight, panelWidth, lineHeight), 
+            m_lastRoundScore.IsKaboot && m_lastRoundScore.Team2RawPoints > 0 ? 
+            $"Kaboot Bonus: {team2Divided}" : $"Divided by 10: {team2Divided}");
+        
+        if (m_lastRoundScore.Multiplier > 1 && m_lastRoundScore.Team2RoundScore > 0)
+        {
+            GUI.Label(new Rect(startX + 20, startY + line++ * lineHeight, panelWidth, lineHeight), 
+                $"Multiplier: ×{m_lastRoundScore.Multiplier}");
+        }
+        
+        GUI.Label(new Rect(startX + 20, startY + line++ * lineHeight, panelWidth, lineHeight), 
+            $"Round Score: +{m_lastRoundScore.Team2RoundScore} {(m_lastRoundScore.Team2RoundScore > 0 ? "✓" : "✗")}");
+        
+        line++;
+        
+        // Summary
+        if (m_lastRoundScore.IsKaboot)
+        {
+            GUI.Label(new Rect(startX, startY + line++ * lineHeight, panelWidth, lineHeight), 
+                "*** KABOOT! (Winner took all tricks) ***");
+        }
+        
+        if (m_lastRoundScore.Multiplier > 1)
+        {
+            GUI.Label(new Rect(startX, startY + line++ * lineHeight, panelWidth, lineHeight), 
+                $"Multiplier: ×{m_lastRoundScore.Multiplier} (Double/Triple/Quad)");
+        }
+        
+        bool bidderWon = (m_lastRoundScore.BiddingTeam == m_lastRoundScore.WinningTeam);
+        string bidderName = m_lastRoundScore.BiddingTeam == PlayerTeam.Team1 ? "Team 1" : "Team 2";
+        
+        GUI.Label(new Rect(startX, startY + line++ * lineHeight, panelWidth, lineHeight), 
+            bidderWon ? $"{bidderName} (Bidder) WON!" : $"{bidderName} (Bidder) LOST!");
+        
+        line++;
+        
+        // Cumulative Totals
+        GUI.Label(new Rect(startX, startY + line++ * lineHeight, panelWidth, lineHeight), 
+            $"Total Scores: Team1={m_lastRoundScore.Team1CumulativeScore} | Team2={m_lastRoundScore.Team2CumulativeScore}");
+        
+        // Timer
+        GUI.Label(new Rect(startX, startY + line++ * lineHeight, panelWidth, lineHeight), 
+            $"(Closing in {Mathf.CeilToInt(m_scoreDisplayTimer)}s...)");
     }
 
 }
