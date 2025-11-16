@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Pebble;
-
+using UnityEngine.UI;
 //----------------------------------------------
 // GameStage
 //----------------------------------------------
@@ -44,8 +44,12 @@ public class GameStage : Stage, IDeckOwner
     
     private ProjectManager                     m_projectManager; // Projects (Masharie3) system
     private ProjectUI                          m_projectUI;      // Projects UI component
+    
+    private SawaUI                             m_sawaUI;         // Sawa UI component
 
     private RassaGameIntegration               m_rassaIntegration; // Rassa system integration
+    
+    private bool m_sawaInProgress = false;                      // Flag to prevent Sawa during auto-resolution
 
     private EndState m_endState;                                // Success/Fail/None state
     
@@ -199,6 +203,12 @@ public class GameStage : Stage, IDeckOwner
         m_projectUI.Init(this, m_projectManager);
         GameObject.DontDestroyOnLoad(projectUIObj);                // Persist across scene loads
 
+        // Create SawaUI GameObject
+        GameObject sawaUIObj = new GameObject("SawaUI");
+        m_sawaUI = sawaUIObj.AddComponent<SawaUI>();
+        GameObject.DontDestroyOnLoad(sawaUIObj);                   // Persist across scene loads
+        // Note: SawaUI.Awake() will automatically find and disable the button named "SawaButton"
+
         // Find Rassa integration component
         m_rassaIntegration = GameObject.FindObjectOfType<RassaGameIntegration>();
         if (m_rassaIntegration != null)
@@ -213,6 +223,7 @@ public class GameStage : Stage, IDeckOwner
         GameEventDispatcher.Subscribe<BeloteCard.Played>(this.OnCardPlayed); // Listen to plays
         GameEventDispatcher.Subscribe<BiddingCompleteEvent>(this.OnBiddingComplete); // Listen to bidding completion
         GameEventDispatcher.Subscribe<RassaChoiceCompleteEvent>(this.OnRassaChoiceComplete); // Listen to Rassa choice
+        GameEventDispatcher.Subscribe<SawaClaimedEvent>(this.OnSawaClaimed); // Listen to Sawa claims
 
         AddPlayers();                                              // Create players for the match
     }
@@ -230,9 +241,17 @@ public class GameStage : Stage, IDeckOwner
             m_projectUI = null;
         }
 
+        // Cleanup SawaUI
+        if (m_sawaUI != null)
+        {
+            GameObject.Destroy(m_sawaUI.gameObject);
+            m_sawaUI = null;
+        }
+
         GameEventDispatcher.UnSubscribe<BeloteCard.Played>(this.OnCardPlayed); // Stop listening
         GameEventDispatcher.UnSubscribe<BiddingCompleteEvent>(this.OnBiddingComplete); // Stop listening
         GameEventDispatcher.UnSubscribe<RassaChoiceCompleteEvent>(this.OnRassaChoiceComplete); // Stop listening to Rassa
+        GameEventDispatcher.UnSubscribe<SawaClaimedEvent>(this.OnSawaClaimed); // Stop listening to Sawa
 
         foreach (Player player in m_players)
         {
@@ -733,6 +752,15 @@ public class GameStage : Stage, IDeckOwner
         Debug.Log($"[GameStage] Starting bidding round for Round {m_currentRound}");
         Debug.Log($"[GameStage] Deck size at start of bidding: {m_deck.Size}");
         
+        // Hide Sawa button during bidding
+        if (m_sawaUI != null)
+        {
+            SawaAvailableEvent sawaEvt = Pools.Claim<SawaAvailableEvent>();
+            sawaEvt.Player = null;
+            sawaEvt.IsAvailable = false;
+            GameEventDispatcher.SendEvent(sawaEvt);
+        }
+        
         // Reset all players' bidding state (for normal rounds, not no-contract restart)
         // Note: For no-contract case, players are already reset in OnBiddingComplete
         foreach (Player player in m_players)
@@ -1075,6 +1103,107 @@ public class GameStage : Stage, IDeckOwner
         evt.Current = CurrentPlayer;
         evt.Previous = previous;
         GameEventDispatcher.SendEvent(evt);
+
+        // Check if the current player can claim Sawa
+        // Requirements:
+        // 1. Not currently processing a Sawa claim
+        // 2. Player exists and has cards in hand
+        // 3. Bidding is complete (Bidder is set)
+        // 4. Not waiting for any prompts (Rassa, etc.)
+        // 5. At least one fold has been completed (not the very first trick)
+        if (!m_sawaInProgress && 
+            !m_waitingForRassaChoice &&
+            CurrentPlayer != null && 
+            CurrentPlayer.Hand != null && 
+            CurrentPlayer.Hand.Size > 0 &&
+            Bidder != null)
+        {
+            // Only check Sawa after at least one fold has been completed
+            // This prevents it from showing at the very start of play
+            bool hasStartedPlaying = false;
+            foreach (List<Fold> teamFolds in m_pastFolds)
+            {
+                if (teamFolds.Count > 0)
+                {
+                    hasStartedPlaying = true;
+                    break;
+                }
+            }
+
+            if (hasStartedPlaying)
+            {
+                CheckSawaAvailability(CurrentPlayer);
+            }
+        }
+    }
+
+    //----------------------------------------------
+    // Check if the current player can claim Sawa
+    void CheckSawaAvailability(Player player)
+    {
+        // IMPORTANT: Sawa should only appear when player is LEADING (first card of trick)
+        bool isLeading = (m_currentFold.Deck.Size == 0);
+        
+        bool canClaimSawa = false;
+        
+        if (isLeading)
+        {
+            // Only check Sawa if player is leading the trick
+            canClaimSawa = SawaDetector.CanClaimSawa(player, m_currentFold, Trump, m_players);
+            
+            if (canClaimSawa)
+            {
+                Debug.Log($"[GameStage] {player.Name} can claim Sawa (is leading)!");
+            }
+        }
+        else
+        {
+            Debug.Log($"[GameStage] {player.Name} is not leading - Sawa not available");
+        }
+
+        // Send event to notify UI
+        SawaAvailableEvent evt = Pools.Claim<SawaAvailableEvent>();
+        evt.Player = player;
+        evt.IsAvailable = canClaimSawa;
+        GameEventDispatcher.SendEvent(evt);
+    }
+
+    //----------------------------------------------
+    // Handle when a player claims Sawa
+    void OnSawaClaimed(SawaClaimedEvent evt)
+    {
+        if (evt.Player != CurrentPlayer)
+        {
+            Debug.LogWarning($"[GameStage] {evt.Player.Name} tried to claim Sawa but it's not their turn!");
+            return;
+        }
+
+        // Verify that the player can actually claim Sawa
+        bool canClaim = SawaDetector.CanClaimSawa(evt.Player, m_currentFold, Trump, m_players);
+        if (!canClaim)
+        {
+            Debug.LogWarning($"[GameStage] {evt.Player.Name} tried to claim Sawa but conditions are not met!");
+            return;
+        }
+
+        Debug.Log($"[GameStage] === {evt.Player.Name} CLAIMED SAWA ===");
+        m_sawaInProgress = true;
+
+        // Auto-resolve all remaining tricks
+        SawaAutoPlay.AutoResolveRemainingTricks(evt.Player, m_currentFold, Trump, m_players, m_pastFolds, this);
+
+        // Set the last folding team to the claiming player's team (for "10 de der")
+        LastFoldingTeam = evt.Player.Team;
+
+        // End the round
+        Debug.Log("[GameStage] Sawa complete - ending round");
+        EndRound();
+        
+        m_sawaInProgress = false;
+
+        // Start next round
+        Debug.Log("[GameStage] Starting next round after Sawa");
+        StartRound();
     }
 
     //----------------------------------------------
@@ -1092,6 +1221,17 @@ public class GameStage : Stage, IDeckOwner
         if (m_projectManager != null && evt.Card != null && evt.Card.Owner is Player player)
         {
             m_projectManager.OnCardPlayed(evt.Card, player);
+        }
+        
+        // Hide Sawa button when ANY card is played
+        // Player chose to play a card instead of claiming Sawa
+        if (m_sawaUI != null)
+        {
+            SawaAvailableEvent sawaEvt = Pools.Claim<SawaAvailableEvent>();
+            sawaEvt.Player = null;
+            sawaEvt.IsAvailable = false;
+            GameEventDispatcher.SendEvent(sawaEvt);
+            Debug.Log("[GameStage] Card played - hiding Sawa button");
         }
         
         m_afterPlayTimer = s_afterPlayDuration;                    // Start post-play cooldown

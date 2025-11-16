@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using UnityEngine;
 using Pebble;
 
 //----------------------------------------------
@@ -279,5 +280,17 @@ public class Player : IDeckOwner
     public void PrintHand()
     {
         Hand.Print(Name);                   // Debug helper: print hand to logs/console
+    }
+
+    //----------------------------------------------
+    // Sawa Methods
+    public void ClaimSawa()
+    {
+        // Dispatch Sawa claimed event
+        SawaClaimedEvent evt = Pools.Claim<SawaClaimedEvent>();
+        evt.Player = this;
+        GameEventDispatcher.SendEvent(evt);
+        
+        Debug.Log($"[Player] {Name} claimed Sawa!");
     }
 }
