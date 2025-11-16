@@ -39,6 +39,8 @@ public class GameStage : Stage, IDeckOwner
     private ActionQueue                        m_actionQueue;    // Queues player/engine actions
 
     private GameStageRenderer                  m_renderer;       // UI layer for this stage
+    
+    private GameEventLogger                    m_eventLogger;    // Event logger for debugging and monitoring
 
     private BelootBiddingSystem               m_biddingSystem;  // Bidding system for trump selection
     
@@ -178,6 +180,7 @@ public class GameStage : Stage, IDeckOwner
         m_currentFold = new Fold();                                // Start with an empty fold
         m_pastFolds = new List<Fold>[Enum.GetValues(typeof(PlayerTeam)).Length];
         m_renderer = new GameStageRenderer();                      // UI renderer instance
+        m_eventLogger = new GameEventLogger();                     // Event logger instance
         m_biddingSystem = new BelootBiddingSystem();               // Bidding system instance
         m_projectManager = new ProjectManager(this);               // Projects (Masharie3) system
 
@@ -194,6 +197,9 @@ public class GameStage : Stage, IDeckOwner
     {
         m_renderer.Stage = this;                                   // Bind renderer to this stage
         m_renderer.Init();                                         // Initialize UI
+        
+        m_eventLogger.Stage = this;                                // Bind event logger to this stage
+        m_eventLogger.Init();                                      // Initialize event subscriptions
 
         m_deck.Init(Definition.Scoring);                           // Create a Belote deck using scoring data
 
@@ -232,6 +238,7 @@ public class GameStage : Stage, IDeckOwner
     protected override void OnShutdown()
     {
         m_renderer.Shutdown();                                     // Cleanup UI
+        m_eventLogger.Shutdown();                                  // Cleanup event subscriptions
 
         // Cleanup ProjectUI
         if (m_projectUI != null)
@@ -1246,6 +1253,14 @@ public class GameStage : Stage, IDeckOwner
 
             Player winner = CurrentFold.Winner;                    // Winner leads next fold
             LastFoldingTeam = winner.Team;
+            
+            // Send fold winner event
+            FoldWinnerEvent foldEvt = Pools.Claim<FoldWinnerEvent>();
+            foldEvt.Winner = winner;
+            foldEvt.WinningTeam = winner.Team;
+            foldEvt.FoldPoints = CurrentFold.Points;
+            foldEvt.CardsInFold = CurrentFold.Deck.Size;
+            GameEventDispatcher.SendEvent(foldEvt);
 
             Fold newFold = new Fold();                             // Archive current fold and start a new one
             CurrentFold.MoveTo(newFold);
@@ -1327,6 +1342,22 @@ public class GameStage : Stage, IDeckOwner
             IsKaboot = false;
             Team1CumulativeScore = 0;
             Team2CumulativeScore = 0;
+        }
+    }
+    
+    public class FoldWinnerEvent : PooledEvent
+    {
+        public Player Winner { get; set; }               // Player who won the fold
+        public PlayerTeam WinningTeam { get; set; }      // Team that won the fold
+        public int FoldPoints { get; set; }              // Points earned from this fold
+        public int CardsInFold { get; set; }             // Number of cards in the fold (should be 4)
+        
+        public override void Reset()
+        {
+            Winner = null;
+            WinningTeam = PlayerTeam.Team1;
+            FoldPoints = 0;
+            CardsInFold = 0;
         }
     }
 }
