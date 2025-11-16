@@ -216,6 +216,18 @@ public class GameEventLogger
         {
             Debug.Log("║ Result: Deck has been reordered");
             Debug.Log("║ Note: New card order affects dealing");
+            
+            // Show deck order after ASSA
+            if (evt.DeckCards != null && evt.DeckCards.Count > 0)
+            {
+                Debug.Log("║");
+                Debug.Log($"║ === DECK ORDER AFTER ASSA ({evt.DeckCards.Count} cards) ===");
+                for (int i = 0; i < evt.DeckCards.Count; i++)
+                {
+                    var card = evt.DeckCards[i];
+                    Debug.Log($"║ [{i + 1,2}] {card.Value,-8} of {card.Family}");
+                }
+            }
         }
         else
         {
@@ -502,6 +514,23 @@ public class GameEventLogger
                     int handSize = player.Hand?.Size ?? 0;
                     string statusIcon = handSize == 8 ? "✓" : "⚠";
                     Debug.Log($"║   {statusIcon} {player.Name} ({player.Position}): {handSize} cards");
+                }
+                
+                // Show each player's actual cards
+                Debug.Log("║");
+                Debug.Log("║ === EACH PLAYER'S CARDS AFTER BIDDING ===");
+                foreach (var player in Stage.Players)
+                {
+                    Debug.Log($"║");
+                    Debug.Log($"║ {player.Name} ({player.Position}) - Team {player.Team}:");
+                    if (player.Hand != null && player.Hand.Cards != null)
+                    {
+                        for (int i = 0; i < player.Hand.Cards.Count; i++)
+                        {
+                            var card = player.Hand.Cards[i];
+                            Debug.Log($"║   [{i + 1}] {card.Value,-8} of {card.Family}");
+                        }
+                    }
                 }
             }
             

@@ -263,6 +263,7 @@ public class AssaaCardReorderUI : MonoBehaviour
             AssaaReorderCompleteEvent evt = Pools.Claim<AssaaReorderCompleteEvent>();
             evt.Success = true;
             evt.ReorderingPlayer = currentPlayer;
+            evt.DeckCards = new System.Collections.Generic.List<BeloteCard>(currentDeck?.Cards ?? new System.Collections.Generic.List<BeloteCard>());
             GameEventDispatcher.SendEvent(evt);
 
             // Hide the panel
@@ -287,6 +288,7 @@ public class AssaaCardReorderUI : MonoBehaviour
         AssaaReorderCompleteEvent evt = Pools.Claim<AssaaReorderCompleteEvent>();
         evt.Success = false;
         evt.ReorderingPlayer = currentPlayer;
+        evt.DeckCards = null;  // No deck cards when cancelled
         GameEventDispatcher.SendEvent(evt);
 
         // Hide the panel

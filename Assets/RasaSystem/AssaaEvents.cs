@@ -65,11 +65,13 @@ public class AssaaReorderCompleteEvent : PooledEvent
 {
     public bool Success { get; set; }
     public Player ReorderingPlayer { get; set; }
+    public System.Collections.Generic.List<BeloteCard> DeckCards { get; set; }  // The reordered deck
 
     public override void Reset()
     {
         Success = false;
         ReorderingPlayer = null;
+        DeckCards = null;
     }
 }
 
