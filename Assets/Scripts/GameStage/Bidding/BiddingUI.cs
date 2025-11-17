@@ -194,6 +194,12 @@ public class BiddingUI : MonoBehaviour
         m_ignoreBiddingTurnEvents = false;
         m_preventBidSubmission = false;
         
+        // Reset multiplier bidding state for new round
+        m_inMultiplierBidding = false;
+        m_currentMultiplier = 1;
+        m_trumpConfirmer = null;
+        m_isOpposingTeamTurn = false;
+        
         Debug.Log($"[FIRST BIDDER DEBUG] BiddingUI cached m_currentBidder: {m_currentBidder?.Name}");
         
         // CRITICAL: Verify against system value
